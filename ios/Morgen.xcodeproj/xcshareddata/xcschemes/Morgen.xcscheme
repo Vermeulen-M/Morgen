@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-               BuildableName = "AlarmChallenge.app"
-               BlueprintName = "AlarmChallenge"
-               ReferencedContainer = "container:AlarmChallenge.xcodeproj">
+               BuildableName = "Morgen.app"
+               BlueprintName = "Morgen"
+               ReferencedContainer = "container:Morgen.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -33,9 +33,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "00E356ED1AD99517003FC87E"
-               BuildableName = "AlarmChallengeTests.xctest"
-               BlueprintName = "AlarmChallengeTests"
-               ReferencedContainer = "container:AlarmChallenge.xcodeproj">
+               BuildableName = "MorgenTests.xctest"
+               BlueprintName = "MorgenTests"
+               ReferencedContainer = "container:Morgen.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -55,9 +55,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "AlarmChallenge.app"
-            BlueprintName = "AlarmChallenge"
-            ReferencedContainer = "container:AlarmChallenge.xcodeproj">
+            BuildableName = "Morgen.app"
+            BlueprintName = "Morgen"
+            ReferencedContainer = "container:Morgen.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -72,9 +72,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
-            BuildableName = "AlarmChallenge.app"
-            BlueprintName = "AlarmChallenge"
-            ReferencedContainer = "container:AlarmChallenge.xcodeproj">
+            BuildableName = "Morgen.app"
+            BlueprintName = "Morgen"
+            ReferencedContainer = "container:Morgen.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
