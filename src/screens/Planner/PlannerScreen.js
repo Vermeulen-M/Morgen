@@ -1,45 +1,322 @@
 import React, {useState} from 'react';
 import {
-  View, Text, StyleSheet, ScrollView,
+  View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, SafeAreaView, StatusBar,
 } from 'react-native';
 import {useTheme} from '../../theme';
 
-const ROUTINE_ITEMS = [
-  {id: 'hydrate', emoji: '💧', label: 'Drink water (500ml)'},
-  {id: 'stretch', emoji: '🧘', label: '5 min stretch'},
-  {id: 'journal', emoji: '📝', label: 'Write 1 intention'},
-  {id: 'cold', emoji: '🚿', label: 'Cold shower'},
-  {id: 'read', emoji: '📚', label: 'Read 10 min'},
-];
+// ---------- JOUR TAB ----------
+const JourTab = ({colors, typography, spacing, radius}) => {
+  const [tasks, setTasks] = useState([]);
+  const [newTask, setNewTask] = useState('');
 
-const NUTRITION_TIPS = [
-  {meal: 'Breakfast', tip: 'Start with protein — eggs, Greek yogurt or nuts to stabilize blood sugar and kill morning hunger.', emoji: '🍳'},
-  {meal: 'Lunch', tip: 'Go for complex carbs + lean protein. Avoid heavy meals that cause afternoon crash.', emoji: '🥗'},
-  {meal: 'Dinner', tip: 'Light and early. Your body processes food better before 8pm. Less carbs, more veggies.', emoji: '🍽️'},
-];
+  const toggleTask = (id) => {
+    setTasks(prev => prev.map(t => t.id === id ? {...t, done: !t.done} : t));
+  };
 
-const ZONES = [
-  {id: 'morning', emoji: '🌅', label: 'Morning routine'},
-  {id: 'work', emoji: '💼', label: 'Work & focus'},
-  {id: 'health', emoji: '💪', label: 'Health & sport'},
-  {id: 'evening', emoji: '🌙', label: 'Evening wind-down'},
+  const addTask = () => {
+    if (!newTask.trim()) return;
+    setTasks(prev => [...prev, {id: Date.now().toString(), label: newTask.trim(), done: false}]);
+    setNewTask('');
+  };
+
+  const removeTask = (id) => {
+    setTasks(prev => prev.filter(t => t.id !== id));
+  };
+
+  return (
+    <View style={{paddingHorizontal: spacing.xl, paddingTop: spacing.lg}}>
+      <Text style={[typography.label, {color: colors.accent, marginBottom: spacing.md}]}>
+        AUJOURD'HUI
+      </Text>
+
+      {tasks.length === 0 && (
+        <View style={{
+          backgroundColor: colors.surface, borderRadius: radius.md,
+          borderColor: colors.borderSubtle, borderWidth: 0.5,
+          padding: spacing.lg, marginBottom: spacing.sm, alignItems: 'center',
+        }}>
+          <Text style={[typography.body, {color: colors.textSecondary, textAlign: 'center'}]}>
+            Aucune tâche pour l'instant — ajoute la première ci-dessous
+          </Text>
+        </View>
+      )}
+
+      {tasks.map(task => (
+        <View
+          key={task.id}
+          style={{
+            backgroundColor: colors.surface, borderRadius: radius.md,
+            borderColor: task.done ? colors.success : colors.borderSubtle,
+            borderWidth: task.done ? 1 : 0.5, padding: spacing.lg,
+            marginBottom: spacing.sm, flexDirection: 'row', alignItems: 'center',
+            opacity: task.done ? 0.7 : 1,
+          }}>
+          <TouchableOpacity
+            onPress={() => toggleTask(task.id)}
+            activeOpacity={0.75}
+            style={{flexDirection: 'row', alignItems: 'center', flex: 1}}>
+            <View style={{
+              width: 22, height: 22, borderRadius: 7, borderWidth: 1.5,
+              borderColor: task.done ? colors.success : colors.border,
+              backgroundColor: task.done ? colors.success : 'transparent',
+              alignItems: 'center', justifyContent: 'center', marginRight: 12,
+            }}>
+              {task.done && <Text style={{color: '#fff', fontSize: 12, fontWeight: '700'}}>✓</Text>}
+            </View>
+            <Text style={[typography.body, {
+              color: task.done ? colors.textSecondary : colors.text, flex: 1,
+              textDecorationLine: task.done ? 'line-through' : 'none',
+            }]}>
+              {task.label}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => removeTask(task.id)}
+            style={{
+              width: 28, height: 28, borderRadius: 14, marginLeft: 8,
+              alignItems: 'center', justifyContent: 'center',
+              backgroundColor: colors.borderSubtle,
+            }}>
+            <Text style={{color: colors.textSecondary, fontSize: 14, fontWeight: '700'}}>×</Text>
+          </TouchableOpacity>
+        </View>
+      ))}
+
+      <View style={{flexDirection: 'row', marginTop: spacing.sm}}>
+        <TextInput
+          value={newTask}
+          onChangeText={setNewTask}
+          placeholder="Ajouter une tâche..."
+          placeholderTextColor={colors.textTertiary}
+          onSubmitEditing={addTask}
+          style={{
+            flex: 1, backgroundColor: colors.surface, borderRadius: radius.md,
+            borderColor: colors.borderSubtle, borderWidth: 0.5,
+            paddingHorizontal: spacing.lg, paddingVertical: 12,
+            color: colors.text, marginRight: spacing.sm,
+          }}
+        />
+        <TouchableOpacity
+          onPress={addTask}
+          style={{
+            backgroundColor: colors.accent, borderRadius: radius.md,
+            paddingHorizontal: spacing.lg, justifyContent: 'center',
+          }}>
+          <Text style={{color: '#fff', fontWeight: '700', fontSize: 18}}>+</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+// ---------- COURT TERME TAB ----------
+const CourtTermeTab = ({colors, typography, spacing, radius}) => {
+  const [goals, setGoals] = useState([]);
+  const [newGoal, setNewGoal] = useState('');
+
+  const addGoal = () => {
+    if (!newGoal.trim()) return;
+    setGoals(prev => [...prev, {id: Date.now().toString(), label: newGoal.trim(), progress: 0}]);
+    setNewGoal('');
+  };
+
+  const removeGoal = (id) => {
+    setGoals(prev => prev.filter(g => g.id !== id));
+  };
+
+  const bumpProgress = (id) => {
+    setGoals(prev => prev.map(g =>
+      g.id === id ? {...g, progress: Math.min(100, g.progress + 10)} : g,
+    ));
+  };
+
+  return (
+    <View style={{paddingHorizontal: spacing.xl, paddingTop: spacing.lg}}>
+      <Text style={[typography.label, {color: colors.accent, marginBottom: spacing.md}]}>
+        COURT TERME (cette semaine / ce mois)
+      </Text>
+
+      {goals.length === 0 && (
+        <View style={{
+          backgroundColor: colors.surface, borderRadius: radius.md,
+          borderColor: colors.borderSubtle, borderWidth: 0.5,
+          padding: spacing.lg, marginBottom: spacing.sm, alignItems: 'center',
+        }}>
+          <Text style={[typography.body, {color: colors.textSecondary, textAlign: 'center'}]}>
+            Aucun objectif pour l'instant — ajoute le premier ci-dessous
+          </Text>
+        </View>
+      )}
+
+      {goals.map(goal => (
+        <View
+          key={goal.id}
+          style={{
+            backgroundColor: colors.surface, borderRadius: radius.md,
+            borderColor: colors.borderSubtle, borderWidth: 0.5,
+            padding: spacing.lg, marginBottom: spacing.sm,
+          }}>
+          <View style={{flexDirection: 'row', alignItems: 'flex-start'}}>
+            <TouchableOpacity
+              onPress={() => bumpProgress(goal.id)}
+              activeOpacity={0.75}
+              style={{flex: 1}}>
+              <Text style={[typography.body, {color: colors.text, marginBottom: 10}]}>
+                {goal.label}
+              </Text>
+              <View style={{
+                height: 8, borderRadius: 4, backgroundColor: colors.borderSubtle, overflow: 'hidden',
+              }}>
+                <View style={{
+                  height: '100%', width: `${goal.progress}%`,
+                  backgroundColor: goal.progress >= 100 ? colors.success : colors.accent,
+                  borderRadius: 4,
+                }} />
+              </View>
+              <Text style={[typography.bodySmall, {color: colors.textTertiary, marginTop: 6}]}>
+                {goal.progress}% — appuyer pour avancer
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => removeGoal(goal.id)}
+              style={{
+                width: 28, height: 28, borderRadius: 14, marginLeft: 8,
+                alignItems: 'center', justifyContent: 'center',
+                backgroundColor: colors.borderSubtle,
+              }}>
+              <Text style={{color: colors.textSecondary, fontSize: 14, fontWeight: '700'}}>×</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ))}
+
+      <View style={{flexDirection: 'row', marginTop: spacing.sm}}>
+        <TextInput
+          value={newGoal}
+          onChangeText={setNewGoal}
+          placeholder="Ajouter un objectif..."
+          placeholderTextColor={colors.textTertiary}
+          onSubmitEditing={addGoal}
+          style={{
+            flex: 1, backgroundColor: colors.surface, borderRadius: radius.md,
+            borderColor: colors.borderSubtle, borderWidth: 0.5,
+            paddingHorizontal: spacing.lg, paddingVertical: 12,
+            color: colors.text, marginRight: spacing.sm,
+          }}
+        />
+        <TouchableOpacity
+          onPress={addGoal}
+          style={{
+            backgroundColor: colors.accent, borderRadius: radius.md,
+            paddingHorizontal: spacing.lg, justifyContent: 'center',
+          }}>
+          <Text style={{color: '#fff', fontWeight: '700', fontSize: 18}}>+</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+// ---------- LONG TERME TAB ----------
+const LongTermeTab = ({colors, typography, spacing, radius}) => {
+  const [visions, setVisions] = useState([]);
+  const [newVision, setNewVision] = useState('');
+
+  const addVision = () => {
+    if (!newVision.trim()) return;
+    setVisions(prev => [...prev, {id: Date.now().toString(), label: newVision.trim(), note: ''}]);
+    setNewVision('');
+  };
+
+  const removeVision = (id) => {
+    setVisions(prev => prev.filter(v => v.id !== id));
+  };
+
+  return (
+    <View style={{paddingHorizontal: spacing.xl, paddingTop: spacing.lg}}>
+      <Text style={[typography.label, {color: colors.accent, marginBottom: spacing.md}]}>
+        LONG TERME (vision)
+      </Text>
+
+      {visions.length === 0 && (
+        <View style={{
+          backgroundColor: colors.surface, borderRadius: radius.lg,
+          borderColor: colors.borderSubtle, borderWidth: 0.5,
+          padding: spacing.lg, marginBottom: spacing.md, alignItems: 'center',
+        }}>
+          <Text style={[typography.body, {color: colors.textSecondary, textAlign: 'center'}]}>
+            Aucune vision long terme pour l'instant — ajoute la première ci-dessous
+          </Text>
+        </View>
+      )}
+
+      {visions.map(vision => (
+        <View
+          key={vision.id}
+          style={{
+            backgroundColor: colors.surface, borderRadius: radius.lg,
+            borderColor: colors.borderSubtle, borderWidth: 0.5,
+            padding: spacing.lg, marginBottom: spacing.md,
+            flexDirection: 'row', alignItems: 'flex-start',
+          }}>
+          <View style={{flex: 1}}>
+            <Text style={[typography.h3, {color: colors.text}]}>{vision.label}</Text>
+            {!!vision.note && (
+              <Text style={[typography.bodySmall, {color: colors.textSecondary, marginTop: 6}]}>
+                {vision.note}
+              </Text>
+            )}
+          </View>
+          <TouchableOpacity
+            onPress={() => removeVision(vision.id)}
+            style={{
+              width: 28, height: 28, borderRadius: 14, marginLeft: 8,
+              alignItems: 'center', justifyContent: 'center',
+              backgroundColor: colors.borderSubtle,
+            }}>
+            <Text style={{color: colors.textSecondary, fontSize: 14, fontWeight: '700'}}>×</Text>
+          </TouchableOpacity>
+        </View>
+      ))}
+
+      <View style={{flexDirection: 'row', marginTop: spacing.sm}}>
+        <TextInput
+          value={newVision}
+          onChangeText={setNewVision}
+          placeholder="Ajouter une vision long terme..."
+          placeholderTextColor={colors.textTertiary}
+          onSubmitEditing={addVision}
+          style={{
+            flex: 1, backgroundColor: colors.surface, borderRadius: radius.md,
+            borderColor: colors.borderSubtle, borderWidth: 0.5,
+            paddingHorizontal: spacing.lg, paddingVertical: 12,
+            color: colors.text, marginRight: spacing.sm,
+          }}
+        />
+        <TouchableOpacity
+          onPress={addVision}
+          style={{
+            backgroundColor: colors.accent, borderRadius: radius.md,
+            paddingHorizontal: spacing.lg, justifyContent: 'center',
+          }}>
+          <Text style={{color: '#fff', fontWeight: '700', fontSize: 18}}>+</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+// ---------- MAIN SCREEN ----------
+const TABS = [
+  {key: 'jour', label: 'Jour'},
+  {key: 'court', label: 'Court terme'},
+  {key: 'long', label: 'Long terme'},
 ];
 
 const PlannerScreen = () => {
   const {colors, typography, spacing, radius} = useTheme();
-  const [checkedItems, setCheckedItems] = useState([]);
-  const [expandedZone, setExpandedZone] = useState(null);
-
-  const toggleItem = (id) => {
-    setCheckedItems(prev =>
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id],
-    );
-  };
-
-  const today = new Date().toLocaleDateString('en-US', {
-    weekday: 'long', month: 'long', day: 'numeric',
-  });
+  const [activeTab, setActiveTab] = useState('jour');
 
   return (
     <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]}>
@@ -47,127 +324,50 @@ const PlannerScreen = () => {
         barStyle={colors.text === '#fff' ? 'light-content' : 'dark-content'}
         backgroundColor={colors.background}
       />
-      <ScrollView contentContainerStyle={{paddingBottom: 100}} showsVerticalScrollIndicator={false}>
 
-        {/* Header */}
-        <View style={{paddingHorizontal: spacing.xl, paddingTop: spacing.lg, paddingBottom: 8}}>
-          <Text style={[typography.label, {color: colors.accent}]}>DAILY PLANNER</Text>
-          <Text style={[typography.h1, {color: colors.text, marginTop: 2}]}>Today</Text>
-          <Text style={[typography.body, {color: colors.textSecondary}]}>{today}</Text>
-        </View>
+      {/* Header */}
+      <View style={{paddingHorizontal: spacing.xl, paddingTop: spacing.lg, paddingBottom: 8}}>
+        <Text style={[typography.label, {color: colors.accent}]}>PLANNER</Text>
+        <Text style={[typography.h1, {color: colors.text, marginTop: 2}]}>Organisation</Text>
+      </View>
 
-        {/* Intention card */}
-        <View style={{
-          marginHorizontal: spacing.xl, marginTop: spacing.xl,
-          backgroundColor: colors.accent, borderRadius: radius.lg, padding: spacing.xl,
-        }}>
-          <Text style={[typography.label, {color: 'rgba(255,255,255,0.7)', marginBottom: 8}]}>
-            ONE THING TODAY
-          </Text>
-          <Text style={[typography.h2, {color: '#fff'}]}>
-            What matters most today?
-          </Text>
-          <TouchableOpacity style={{
-            backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: radius.md,
-            marginTop: 16, padding: spacing.md,
-          }}>
-            <Text style={{color: '#fff', fontWeight: '600', fontSize: 14}}>
-              Set my intention →
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Morning routine */}
-        <View style={{marginTop: spacing.xxl, paddingHorizontal: spacing.xl}}>
-          <Text style={[typography.label, {color: colors.accent, marginBottom: spacing.md}]}>
-            MORNING ROUTINE
-          </Text>
-          {ROUTINE_ITEMS.map(item => {
-            const checked = checkedItems.includes(item.id);
-            return (
-              <TouchableOpacity
-                key={item.id}
-                onPress={() => toggleItem(item.id)}
-                style={{
-                  backgroundColor: colors.surface, borderRadius: radius.md,
-                  borderColor: checked ? colors.success : colors.borderSubtle,
-                  borderWidth: checked ? 1 : 0.5, padding: spacing.lg,
-                  marginBottom: spacing.sm, flexDirection: 'row',
-                  alignItems: 'center', opacity: checked ? 0.7 : 1,
-                }}
-                activeOpacity={0.75}>
-                <Text style={{fontSize: 22, marginRight: 12}}>{item.emoji}</Text>
-                <Text style={[typography.body, {
-                  color: checked ? colors.textSecondary : colors.text, flex: 1,
-                  textDecorationLine: checked ? 'line-through' : 'none',
-                }]}>
-                  {item.label}
-                </Text>
-                <View style={{
-                  width: 24, height: 24, borderRadius: 8, borderWidth: 1.5,
-                  borderColor: checked ? colors.success : colors.border,
-                  backgroundColor: checked ? colors.success : 'transparent',
-                  alignItems: 'center', justifyContent: 'center',
-                }}>
-                  {checked && <Text style={{color: '#fff', fontSize: 12, fontWeight: '700'}}>✓</Text>}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Nutrition */}
-        <View style={{marginTop: spacing.xxl, paddingHorizontal: spacing.xl}}>
-          <Text style={[typography.label, {color: colors.accent, marginBottom: spacing.md}]}>
-            NUTRITION GUIDE
-          </Text>
-          {NUTRITION_TIPS.map(tip => (
-            <View key={tip.meal} style={{
-              backgroundColor: colors.surface, borderRadius: radius.md,
-              borderColor: colors.borderSubtle, borderWidth: 0.5,
-              padding: spacing.lg, marginBottom: spacing.sm,
-            }}>
-              <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                <Text style={{fontSize: 22, marginRight: 10}}>{tip.emoji}</Text>
-                <Text style={[typography.h3, {color: colors.text}]}>{tip.meal}</Text>
-              </View>
-              <Text style={[typography.bodySmall, {color: colors.textSecondary, marginTop: 8, lineHeight: 20}]}>
-                {tip.tip}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        {/* Life zones */}
-        <View style={{marginTop: spacing.xxl, paddingHorizontal: spacing.xl}}>
-          <Text style={[typography.label, {color: colors.accent, marginBottom: spacing.md}]}>
-            LIFE ZONES
-          </Text>
-          {ZONES.map(zone => (
+      {/* Tab switcher */}
+      <View style={{
+        flexDirection: 'row', marginHorizontal: spacing.xl, marginTop: spacing.md,
+        backgroundColor: colors.surface, borderRadius: radius.md, padding: 4,
+      }}>
+        {TABS.map(tab => {
+          const active = activeTab === tab.key;
+          return (
             <TouchableOpacity
-              key={zone.id}
-              onPress={() => setExpandedZone(expandedZone === zone.id ? null : zone.id)}
+              key={tab.key}
+              onPress={() => setActiveTab(tab.key)}
               style={{
-                backgroundColor: colors.surface, borderRadius: radius.lg,
-                borderColor: colors.borderSubtle, borderWidth: 0.5,
-                padding: spacing.lg, marginBottom: spacing.md,
-              }}
-              activeOpacity={0.8}>
-              <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                <Text style={{fontSize: 24, marginRight: 12}}>{zone.emoji}</Text>
-                <Text style={[typography.h3, {color: colors.text, flex: 1}]}>{zone.label}</Text>
-                <Text style={{color: colors.textTertiary, fontSize: 12}}>
-                  {expandedZone === zone.id ? '▲' : '▼'}
-                </Text>
-              </View>
-              {expandedZone === zone.id && (
-                <Text style={[typography.body, {color: colors.textSecondary, marginTop: spacing.md}]}>
-                  Configure your {zone.label.toLowerCase()} — coming soon.
-                </Text>
-              )}
+                flex: 1, paddingVertical: 10, borderRadius: radius.sm,
+                backgroundColor: active ? colors.accent : 'transparent',
+                alignItems: 'center',
+              }}>
+              <Text style={{
+                color: active ? '#fff' : colors.textSecondary,
+                fontWeight: active ? '700' : '500', fontSize: 13,
+              }}>
+                {tab.label}
+              </Text>
             </TouchableOpacity>
-          ))}
-        </View>
+          );
+        })}
+      </View>
+
+      <ScrollView contentContainerStyle={{paddingBottom: 100}} showsVerticalScrollIndicator={false}>
+        {activeTab === 'jour' && (
+          <JourTab colors={colors} typography={typography} spacing={spacing} radius={radius} />
+        )}
+        {activeTab === 'court' && (
+          <CourtTermeTab colors={colors} typography={typography} spacing={spacing} radius={radius} />
+        )}
+        {activeTab === 'long' && (
+          <LongTermeTab colors={colors} typography={typography} spacing={spacing} radius={radius} />
+        )}
       </ScrollView>
     </SafeAreaView>
   );

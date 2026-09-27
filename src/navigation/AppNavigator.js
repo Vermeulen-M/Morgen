@@ -8,12 +8,18 @@ import {useTheme} from '../theme';
 import AlarmListScreen from '../screens/Alarm/AlarmListScreen';
 import CreateAlarmScreen from '../screens/Alarm/CreateAlarmScreen';
 import AlarmRingingScreen from '../screens/Alarm/AlarmRingingScreen';
+import QRScanScreen from '../screens/Alarm/QRScanScreen';
 import PlannerScreen from '../screens/Planner/PlannerScreen';
 import GroupsScreen from '../screens/Groups/GroupsScreen';
+import CreateGroupScreen from '../screens/Groups/CreateGroupScreen';
+import JoinGroupScreen from '../screens/Groups/JoinGroupScreen';
+import GroupDetailScreen from '../screens/Groups/GroupDetailScreen';
+import ProfileSetupScreen from '../screens/Groups/ProfileSetupScreen';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
 
 const Tab = createBottomTabNavigator();
 const AlarmStack = createStackNavigator();
+const GroupsStack = createStackNavigator();
 
 const TAB_ICONS = {
   Alarms:   '◷',
@@ -25,7 +31,7 @@ const TAB_ICONS = {
 const TabIcon = ({name, focused, color}) => (
   <View style={{alignItems: 'center', justifyContent: 'center', width: 32, height: 28}}>
     <Text style={{
-      fontSize: 26,
+      fontSize: name === 'Alarms' ? 40 : name === 'Groups' ? 20 : 26,
       color: color,
       opacity: focused ? 1 : 0.45,
       lineHeight: 30,
@@ -64,15 +70,49 @@ const AlarmNavigator = () => {
         component={AlarmRingingScreen}
         options={{presentation: 'fullScreenModal', gestureEnabled: false}}
       />
+      <AlarmStack.Screen
+        name="QRScan"
+        component={QRScanScreen}
+        options={{presentation: 'fullScreenModal', gestureEnabled: false}}
+      />
     </AlarmStack.Navigator>
   );
 };
 
-const AppNavigator = () => {
+const GroupsNavigator = () => {
+  const {colors} = useTheme();
+  return (
+    <GroupsStack.Navigator
+      screenOptions={{
+        headerShown: false,
+        cardStyle: {backgroundColor: colors.background},
+      }}>
+      <GroupsStack.Screen name="GroupsList" component={GroupsScreen} />
+      <GroupsStack.Screen
+        name="CreateGroup"
+        component={CreateGroupScreen}
+        options={{presentation: 'modal'}}
+      />
+      <GroupsStack.Screen
+        name="JoinGroup"
+        component={JoinGroupScreen}
+        options={{presentation: 'modal'}}
+      />
+      <GroupsStack.Screen
+        name="ProfileSetup"
+        component={ProfileSetupScreen}
+        options={{presentation: 'modal'}}
+      />
+      <GroupsStack.Screen name="GroupDetail" component={GroupDetailScreen} />
+    </GroupsStack.Navigator>
+  );
+};
+
+const AppNavigator = ({navigationRef}) => {
   const {colors} = useTheme();
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Tab.Navigator
         screenOptions={({route}) => ({
           headerShown: false,
@@ -100,7 +140,7 @@ const AppNavigator = () => {
         })}>
         <Tab.Screen name="Alarms" component={AlarmNavigator} />
         <Tab.Screen name="Planner" component={PlannerScreen} />
-        <Tab.Screen name="Groups" component={GroupsScreen} />
+        <Tab.Screen name="Groups" component={GroupsNavigator} />
         <Tab.Screen name="Settings" component={SettingsScreen} />
       </Tab.Navigator>
     </NavigationContainer>

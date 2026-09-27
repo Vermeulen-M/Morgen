@@ -118,3 +118,18 @@ dependencies {
     }
 }
 apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"
+
+// Workaround: RN autolinking doesn't guarantee these libraries' codegen
+// output exists before :app's CMake configuration runs (known RN Gradle bug).
+afterEvaluate {
+    [':react-native-community_blur',
+     ':react-native-shake',
+     ':react-native-sound',
+     ':react-native-worklets-core'].each { libPath ->
+        if (findProject(libPath) != null) {
+            tasks.named('preBuild').configure {
+                dependsOn("${libPath}:preBuild")
+            }
+        }
+    }
+}
