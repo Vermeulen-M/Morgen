@@ -105,7 +105,14 @@ const GroupsScreen = ({navigation}) => {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         ListEmptyComponent={!loading ? (
           <View style={styles.empty}>
-            <Text style={{fontSize: 56, marginBottom: 20}}>👥</Text>
+            <View style={{
+              width: 72, height: 72, borderRadius: 36,
+              backgroundColor: colors.surfaceHighlight,
+              alignItems: 'center', justifyContent: 'center',
+              marginBottom: spacing.xl,
+            }}>
+              <Text style={{fontSize: 34, color: colors.accent, fontWeight: '200'}}>⊙</Text>
+            </View>
             <Text style={{fontSize: 20, fontWeight: '700', color: colors.text, textAlign: 'center'}}>
               No groups yet
             </Text>

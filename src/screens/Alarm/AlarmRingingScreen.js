@@ -12,7 +12,7 @@ import {
 } from 'react-native-vision-camera';
 import {Worklets} from 'react-native-worklets-core';
 import {useTheme} from '../../theme';
-import {updateStreak} from '../../services/StorageService';
+import {updateStreak, incrementChallengesCompleted} from '../../services/StorageService';
 import {startAlarmSound, stopAlarmSound} from '../../services/SoundService';
 
 const ShakeChallengeUI = ({target, onComplete, colors}) => {
@@ -435,6 +435,7 @@ const AlarmRingingScreen = ({navigation, route}) => {
   const handleChallengeComplete = async () => {
     stopAlarmSound();
     await updateStreak();
+    await incrementChallengesCompleted();
     setSolved(true);
     setTimeout(() => navigation.goBack(), 1800);
   };

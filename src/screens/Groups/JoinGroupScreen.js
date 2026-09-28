@@ -6,9 +6,11 @@ import {
 import {useTheme} from '../../theme';
 import {joinGroupWithCode, hasProfile} from '../../services/GroupsService';
 
-const JoinGroupScreen = ({navigation}) => {
+const JoinGroupScreen = ({navigation, route}) => {
   const {colors, spacing, radius} = useTheme();
-  const [code, setCode] = useState('');
+  // Pré-rempli quand on arrive via le lien morgen://join/CODE
+  const linkedCode = route?.params?.code;
+  const [code, setCode] = useState(linkedCode ? linkedCode.toUpperCase() : '');
   const [saving, setSaving] = useState(false);
 
   const handleJoin = useCallback(async () => {
@@ -19,7 +21,7 @@ const JoinGroupScreen = ({navigation}) => {
     }
 
     if (!(await hasProfile())) {
-      navigation.navigate('ProfileSetup', {
+      navigation.navigate('ProfileGate', {
         onDone: () => navigation.replace('JoinGroup'),
       });
       return;

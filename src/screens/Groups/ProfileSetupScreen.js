@@ -6,28 +6,75 @@ import {
 import {launchImageLibrary} from 'react-native-image-picker';
 import {useTheme} from '../../theme';
 import {
-  createOrUpdateProfile, uploadAvatarPhoto,
+  createOrUpdateProfile, uploadAvatarPhoto, updateWellnessProfile,
+  linkEmailToProfile,
 } from '../../services/GroupsService';
-import {getProfile} from '../../services/StorageService';
+import {getProfile, getWellness} from '../../services/StorageService';
 
 const ProfileSetupScreen = ({navigation, route}) => {
   const {colors, spacing, radius} = useTheme();
   const onDone = route?.params?.onDone;
+  // Quand on ouvre cet écran depuis un autre onglet (ex: Settings), on veut
+  // revenir sur cet onglet plutôt que sur l'écran précédent dans Groups.
+  const returnTo = route?.params?.returnTo;
+  const goBackOrReturn = useCallback(() => {
+    if (returnTo) {
+      navigation.navigate(returnTo);
+    } else {
+      navigation.goBack();
+    }
+  }, [returnTo, navigation]);
 
   const [name, setName] = useState('');
   const [localPhotoUri, setLocalPhotoUri] = useState(null);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  // Ne sert qu'à savoir si on ÉDITE un profil déjà existant (pour montrer la
+  // section "Secure your profile") — un profil qu'on vient tout juste de
+  // créer n'a encore rien à sécuriser tant qu'il n'est pas sauvegardé.
+  const [isExistingProfile, setIsExistingProfile] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [securing, setSecuring] = useState(false);
+  const [secured, setSecured] = useState(false);
 
   React.useEffect(() => {
     getProfile().then(p => {
       if (p) {
         setName(p.name || '');
         setLocalPhotoUri(p.photoUrl || null);
+        setIsExistingProfile(true);
       }
       setLoaded(true);
     });
   }, []);
+
+  const handleSecureProfile = useCallback(async () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      Alert.alert('Champs requis', 'Entre un email et un mot de passe.');
+      return;
+    }
+    if (password.length < 6) {
+      Alert.alert('Mot de passe trop court', 'Choisis au moins 6 caractères.');
+      return;
+    }
+
+    setSecuring(true);
+    try {
+      await linkEmailToProfile(trimmedEmail, password);
+      setSecured(true);
+      Alert.alert(
+        'Profil sécurisé',
+        "Tu peux maintenant te reconnecter avec cet email sur n'importe quel appareil.",
+      );
+    } catch (e) {
+      console.error('Secure profile error:', e);
+      Alert.alert('Erreur', e?.message || "Impossible de sécuriser le profil pour le moment.");
+    } finally {
+      setSecuring(false);
+    }
+  }, [email, password]);
 
   const handlePickPhoto = useCallback(async () => {
     const result = await launchImageLibrary({
@@ -58,15 +105,26 @@ const ProfileSetupScreen = ({navigation, route}) => {
       }
 
       await createOrUpdateProfile({name: trimmed, photoUrl});
+
+      // Première création : si des réglages wellness existaient déjà en
+      // local (avant qu'un profil existe), on les rattache au profil
+      // maintenant qu'il y en a un, pour qu'ils suivent la personne.
+      const localWellness = await getWellness();
+      if (localWellness && Object.keys(localWellness).length > 0) {
+        for (const [field, value] of Object.entries(localWellness)) {
+          await updateWellnessProfile(field, value);
+        }
+      }
+
       onDone?.();
-      navigation.goBack();
+      goBackOrReturn();
     } catch (e) {
       console.error('Save profile error:', e);
       Alert.alert('Erreur', "Impossible d'enregistrer ton profil pour le moment.");
     } finally {
       setSaving(false);
     }
-  }, [name, localPhotoUri, onDone, navigation]);
+  }, [name, localPhotoUri, onDone, goBackOrReturn]);
 
   if (!loaded) return <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]} />;
 
@@ -77,7 +135,7 @@ const ProfileSetupScreen = ({navigation, route}) => {
         borderBottomColor: colors.borderSubtle,
         borderBottomWidth: 0.5,
       }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={goBackOrReturn}>
           <Text style={{fontSize: 15, color: colors.accent}}>Cancel</Text>
         </TouchableOpacity>
         <Text style={{fontSize: 17, fontWeight: '600', color: colors.text}}>
@@ -141,6 +199,69 @@ const ProfileSetupScreen = ({navigation, route}) => {
             borderWidth: 0.5, borderColor: colors.borderSubtle,
           }}
         />
+
+        {isExistingProfile && (
+          <View style={{width: '100%', marginTop: spacing.xl}}>
+            <View style={{height: 0.5, backgroundColor: colors.borderSubtle, marginBottom: spacing.xl}} />
+            <Text style={styles.sectionLabel(colors)}>SECURE YOUR PROFILE</Text>
+            <Text style={{
+              fontSize: 12, color: colors.textSecondary,
+              marginBottom: spacing.lg, lineHeight: 18,
+            }}>
+              {secured
+                ? "This profile can now log in from any device with this email."
+                : 'Add an email and password so you can log back into this exact profile from a new phone or after reinstalling.'}
+            </Text>
+
+            {!secured && (
+              <>
+                <TextInput
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="you@example.com"
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  style={{
+                    width: '100%',
+                    fontSize: 15, color: colors.text,
+                    backgroundColor: colors.surface,
+                    borderRadius: radius.md, padding: spacing.lg,
+                    borderWidth: 0.5, borderColor: colors.borderSubtle,
+                    marginBottom: spacing.md,
+                  }}
+                />
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="Password (min. 6 characters)"
+                  placeholderTextColor={colors.textTertiary}
+                  secureTextEntry
+                  style={{
+                    width: '100%',
+                    fontSize: 15, color: colors.text,
+                    backgroundColor: colors.surface,
+                    borderRadius: radius.md, padding: spacing.lg,
+                    borderWidth: 0.5, borderColor: colors.borderSubtle,
+                    marginBottom: spacing.lg,
+                  }}
+                />
+                <TouchableOpacity
+                  onPress={handleSecureProfile}
+                  disabled={securing}
+                  activeOpacity={0.85}
+                  style={{
+                    backgroundColor: colors.surfaceHighlight, borderRadius: radius.lg,
+                    paddingVertical: 14, alignItems: 'center',
+                  }}>
+                  <Text style={{color: colors.accent, fontWeight: '700', fontSize: 14}}>
+                    {securing ? '...' : 'Secure profile'}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        )}
       </View>
     </SafeAreaView>
   );

@@ -7,6 +7,7 @@ const KEYS = {
   PROFILE: 'ac_profile',
   STREAK: 'ac_streak',
   STATS: 'ac_stats',
+  WELLNESS: 'ac_wellness',
 };
 
 const get = async (key) => {
@@ -89,3 +90,30 @@ export const updateStreak = async () => {
 
 export const getGroups = () => get(KEYS.GROUPS);
 export const saveGroups = (groups) => set(KEYS.GROUPS, groups);
+
+// --- Stats globales (compteur de défis complétés, tous types confondus) ---
+
+export const getStats = () => get(KEYS.STATS);
+export const saveStats = (stats) => set(KEYS.STATS, stats);
+
+export const incrementChallengesCompleted = async () => {
+  const stats = (await getStats()) || {totalChallengesCompleted: 0};
+  const updated = {
+    ...stats,
+    totalChallengesCompleted: (stats.totalChallengesCompleted || 0) + 1,
+  };
+  await saveStats(updated);
+  return updated;
+};
+
+// --- Wellness profile (objectif, niveau d'activité, préférence nutrition) --
+
+export const getWellness = () => get(KEYS.WELLNESS);
+export const saveWellness = (wellness) => set(KEYS.WELLNESS, wellness);
+
+export const updateWellnessField = async (field, value) => {
+  const wellness = (await getWellness()) || {};
+  const updated = {...wellness, [field]: value};
+  await saveWellness(updated);
+  return updated;
+};

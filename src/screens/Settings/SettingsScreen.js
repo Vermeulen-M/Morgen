@@ -1,9 +1,32 @@
-import React from 'react';
+import React, {useState, useCallback} from 'react';
 import {
   View, Text, SafeAreaView, StyleSheet, ScrollView,
-  TouchableOpacity, Switch, StatusBar,
+  TouchableOpacity, Switch, StatusBar, Image, Alert,
 } from 'react-native';
+import {useFocusEffect} from '@react-navigation/native';
 import {useTheme} from '../../theme';
+import {
+  getProfile, getStreak, getStats,
+  getWellness, updateWellnessField,
+} from '../../services/StorageService';
+import {
+  hasProfile, getWellnessProfile, updateWellnessProfile,
+} from '../../services/GroupsService';
+
+const WELLNESS_OPTIONS = {
+  goal: {
+    title: 'My goal',
+    choices: ['Lose weight', 'Build muscle', 'Improve sleep', 'Be more productive', 'Just consistency'],
+  },
+  activityLevel: {
+    title: 'Activity level',
+    choices: ['Sedentary', 'Light', 'Moderate', 'Active', 'Very active'],
+  },
+  nutrition: {
+    title: 'Nutrition preference',
+    choices: ['No preference', 'Vegetarian', 'Vegan', 'Low carb', 'Balanced'],
+  },
+};
 
 const SettingRow = ({emoji, title, subtitle, right, onPress, colors, typography, spacing}) => (
   <TouchableOpacity
@@ -37,8 +60,58 @@ const Section = ({title, children, colors, typography, spacing, radius}) => (
   </View>
 );
 
-const SettingsScreen = () => {
+const SettingsScreen = ({navigation}) => {
   const {colors, typography, spacing, radius, isDark, themeMode, toggleTheme} = useTheme();
+  const [profile, setProfile] = useState(null);
+  const [streak, setStreak] = useState({current: 0});
+  const [stats, setStats] = useState({totalChallengesCompleted: 0});
+  const [wellness, setWellness] = useState({});
+
+  useFocusEffect(
+    useCallback(() => {
+      getProfile().then(p => setProfile(p));
+      getStreak().then(s => setStreak(s || {current: 0}));
+      getStats().then(s => setStats(s || {totalChallengesCompleted: 0}));
+      // Le wellness suit le profil (Supabase) une fois qu'il en existe un —
+      // sinon il reste local à l'appareil (pas de profil = pas de compte serveur).
+      hasProfile().then(hp => {
+        if (hp) {
+          getWellnessProfile().then(w => setWellness(w || {})).catch(() => {});
+        } else {
+          getWellness().then(w => setWellness(w || {}));
+        }
+      });
+    }, []),
+  );
+
+  const handleWellnessField = useCallback((field) => {
+    const {title, choices} = WELLNESS_OPTIONS[field];
+    Alert.alert(title, undefined, [
+      ...choices.map(choice => ({
+        text: choice,
+        onPress: async () => {
+          try {
+            const hp = await hasProfile();
+            const updated = hp
+              ? await updateWellnessProfile(field, choice)
+              : await updateWellnessField(field, choice);
+            setWellness(updated);
+          } catch (e) {
+            console.error('Update wellness error:', e);
+          }
+        },
+      })),
+      {text: 'Cancel', style: 'cancel'},
+    ]);
+  }, []);
+
+  const handleEditProfile = useCallback(async () => {
+    const hp = await hasProfile();
+    navigation.navigate('Groups', {
+      screen: hp ? 'ProfileSetup' : 'ProfileGate',
+      params: {returnTo: 'Settings'},
+    });
+  }, [navigation]);
 
   return (
     <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]}>
@@ -60,23 +133,36 @@ const SettingsScreen = () => {
           borderRadius: radius.lg, padding: spacing.xl, marginBottom: spacing.xl,
           borderWidth: 0.5, borderColor: colors.borderSubtle, alignItems: 'center',
         }}>
-          <View style={{
-            width: 56, height: 56, borderRadius: 28,
-            backgroundColor: colors.accentGlow,
-            alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Text style={{fontSize: 32}}>💪</Text>
-          </View>
-          <Text style={[typography.h2, {color: colors.text, marginTop: 12}]}>Champion</Text>
-          <Text style={[typography.body, {color: colors.textSecondary}]}>
-            0 day streak · 0 challenges done
+          {profile?.photoUrl ? (
+            <Image
+              source={{uri: profile.photoUrl}}
+              style={{width: 56, height: 56, borderRadius: 28}}
+            />
+          ) : (
+            <View style={{
+              width: 56, height: 56, borderRadius: 28,
+              backgroundColor: colors.accentGlow,
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Text style={{fontSize: 22, fontWeight: '700', color: colors.accent}}>
+                {profile?.name ? profile.name.charAt(0).toUpperCase() : '?'}
+              </Text>
+            </View>
+          )}
+          <Text style={[typography.h2, {color: colors.text, marginTop: 12}]}>
+            {profile?.name || 'No profile yet'}
           </Text>
-          <TouchableOpacity style={{
-            backgroundColor: colors.surfaceHighlight, borderRadius: radius.full,
-            marginTop: 14, paddingHorizontal: 20, paddingVertical: 8,
-          }}>
+          <Text style={[typography.body, {color: colors.textSecondary}]}>
+            {(streak.current || 0)} day streak · {(stats.totalChallengesCompleted || 0)} challenges done
+          </Text>
+          <TouchableOpacity
+            onPress={handleEditProfile}
+            style={{
+              backgroundColor: colors.surfaceHighlight, borderRadius: radius.full,
+              marginTop: 14, paddingHorizontal: 20, paddingVertical: 8,
+            }}>
             <Text style={[typography.bodySmall, {color: colors.accent, fontWeight: '600'}]}>
-              Edit Profile
+              {profile?.name ? 'Edit Profile' : 'Create Profile'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -135,21 +221,21 @@ const SettingsScreen = () => {
         {/* Wellness */}
         <Section title="WELLNESS PROFILE" colors={colors} typography={typography} spacing={spacing} radius={radius}>
           <SettingRow
-            emoji="🎯" title="My goal" subtitle="Not set"
+            emoji="🎯" title="My goal" subtitle={wellness.goal || 'Not set'}
             colors={colors} typography={typography} spacing={spacing}
-            onPress={() => {}}
+            onPress={() => handleWellnessField('goal')}
             right={<Text style={[typography.body, {color: colors.textTertiary}]}>›</Text>}
           />
           <SettingRow
-            emoji="🏋️" title="Activity level" subtitle="Not set"
+            emoji="🏋️" title="Activity level" subtitle={wellness.activityLevel || 'Not set'}
             colors={colors} typography={typography} spacing={spacing}
-            onPress={() => {}}
+            onPress={() => handleWellnessField('activityLevel')}
             right={<Text style={[typography.body, {color: colors.textTertiary}]}>›</Text>}
           />
           <SettingRow
-            emoji="🥗" title="Nutrition preference" subtitle="Not set"
+            emoji="🥗" title="Nutrition preference" subtitle={wellness.nutrition || 'Not set'}
             colors={colors} typography={typography} spacing={spacing}
-            onPress={() => {}}
+            onPress={() => handleWellnessField('nutrition')}
             right={<Text style={[typography.body, {color: colors.textTertiary}]}>›</Text>}
           />
         </Section>

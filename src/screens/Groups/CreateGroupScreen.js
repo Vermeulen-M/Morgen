@@ -19,7 +19,7 @@ const CreateGroupScreen = ({navigation}) => {
     }
 
     if (!(await hasProfile())) {
-      navigation.navigate('ProfileSetup', {
+      navigation.navigate('ProfileGate', {
         onDone: () => navigation.replace('CreateGroup'),
       });
       return;

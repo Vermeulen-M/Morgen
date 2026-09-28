@@ -97,8 +97,12 @@ const GroupDetailScreen = ({navigation, route}) => {
   const handleInvite = useCallback(async () => {
     try {
       const invite = await createInvite(groupId, {expiresInHours: 48});
+      // Le lien n'ouvre l'écran de join que si Morgen est déjà installé
+      // (custom scheme, pas de vrai domaine encore) — le code reste donné
+      // en repli pour ceux qui ne l'ont pas.
+      const link = `morgen://join/${invite.code}`;
       await Share.open({
-        message: `Join "${groupName}" on Morgen with this code: ${invite.code}\n(valid 48h, one use)`,
+        message: `Join "${groupName}" on Morgen: ${link}\n(or enter code ${invite.code} manually — valid 48h, one use)`,
         failOnCancel: false,
       });
     } catch (e) {

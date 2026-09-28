@@ -15,6 +15,8 @@ import CreateGroupScreen from '../screens/Groups/CreateGroupScreen';
 import JoinGroupScreen from '../screens/Groups/JoinGroupScreen';
 import GroupDetailScreen from '../screens/Groups/GroupDetailScreen';
 import ProfileSetupScreen from '../screens/Groups/ProfileSetupScreen';
+import ProfileGateScreen from '../screens/Groups/ProfileGateScreen';
+import LoginScreen from '../screens/Groups/LoginScreen';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
 
 const Tab = createBottomTabNavigator();
@@ -103,16 +105,40 @@ const GroupsNavigator = () => {
         component={ProfileSetupScreen}
         options={{presentation: 'modal'}}
       />
+      <GroupsStack.Screen
+        name="ProfileGate"
+        component={ProfileGateScreen}
+        options={{presentation: 'modal'}}
+      />
+      <GroupsStack.Screen
+        name="Login"
+        component={LoginScreen}
+        options={{presentation: 'modal'}}
+      />
       <GroupsStack.Screen name="GroupDetail" component={GroupDetailScreen} />
     </GroupsStack.Navigator>
   );
+};
+
+// Deep link "morgen://join/CODE" -> onglet Groups -> écran JoinGroup, code pré-rempli.
+const linking = {
+  prefixes: ['morgen://'],
+  config: {
+    screens: {
+      Groups: {
+        screens: {
+          JoinGroup: 'join/:code',
+        },
+      },
+    },
+  },
 };
 
 const AppNavigator = ({navigationRef}) => {
   const {colors} = useTheme();
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer ref={navigationRef} linking={linking}>
       <Tab.Navigator
         screenOptions={({route}) => ({
           headerShown: false,

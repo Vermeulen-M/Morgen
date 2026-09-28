@@ -45,3 +45,10 @@ export const getSupabaseUserId = async () => {
   const session = await ensureSupabaseSession();
   return session?.user?.id ?? null;
 };
+
+// À appeler après un signInWithPassword / updateUser réussi, pour que le
+// cache de session (ensureSessionPromise) reflète immédiatement la nouvelle
+// session plutôt que de renvoyer l'ancienne session anonyme mise en cache.
+export const setSupabaseSession = (session) => {
+  ensureSessionPromise = Promise.resolve(session);
+};

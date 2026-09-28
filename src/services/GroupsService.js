@@ -1,4 +1,6 @@
-import {supabase, ensureSupabaseSession, getSupabaseUserId} from './supabaseClient';
+import {
+  supabase, ensureSupabaseSession, getSupabaseUserId, setSupabaseSession,
+} from './supabaseClient';
 import {getProfile, saveProfile} from './StorageService';
 
 // Code d'invitation lisible à voix haute, sans caractères ambigus (pas de 0/O, 1/I).
@@ -16,6 +18,44 @@ const generateInviteCode = () => {
 export const hasProfile = async () => {
   const profile = await getProfile();
   return !!(profile && profile.name);
+};
+
+// --- Retrouver un profil sur un autre appareil (email + mot de passe) -----
+// Le compte de base reste anonyme (zéro friction). "Sécuriser" un profil le
+// convertit en compte permanent avec email/mot de passe SANS changer son id
+// (auth.uid()), donc tout ce qui est déjà lié à ce profil (groupes, wellness)
+// reste accessible. Se reconnecter ailleurs restaure ce même compte.
+
+export const linkEmailToProfile = async (email, password) => {
+  const {data, error} = await supabase.auth.updateUser({email, password});
+  if (error) throw error;
+  return data;
+};
+
+export const loginWithEmail = async (email, password) => {
+  const {data, error} = await supabase.auth.signInWithPassword({email, password});
+  if (error) throw error;
+
+  // Le cache de session doit refléter ce nouveau compte immédiatement,
+  // sinon getSupabaseUserId() continuerait de renvoyer l'ancienne session
+  // anonyme mise en cache sur cet appareil.
+  setSupabaseSession(data.session);
+
+  const {data: profileRow, error: profileError} = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', data.user.id)
+    .maybeSingle();
+  if (profileError) throw profileError;
+
+  if (profileRow) {
+    await saveProfile({
+      id: profileRow.id,
+      name: profileRow.name,
+      photoUrl: profileRow.photo_url,
+    });
+  }
+  return profileRow;
 };
 
 // Upload une photo de profil vers le bucket Supabase Storage "avatars".
@@ -55,11 +95,41 @@ export const createOrUpdateProfile = async ({name, photoUrl}) => {
   return data;
 };
 
+// --- Wellness profile (objectif, activité, nutrition) ---------------------
+// Suit le profil (stocké sur profiles.wellness dans Supabase) plutôt que
+// l'appareil, pour que quelqu'un qui a un profil retrouve ses réglages.
+
+export const getWellnessProfile = async () => {
+  const userId = await getSupabaseUserId();
+  const {data, error} = await supabase
+    .from('profiles')
+    .select('wellness')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.wellness || {};
+};
+
+export const updateWellnessProfile = async (field, value) => {
+  const current = await getWellnessProfile();
+  const updated = {...current, [field]: value};
+  const userId = await getSupabaseUserId();
+  const {error} = await supabase
+    .from('profiles')
+    .update({wellness: updated})
+    .eq('id', userId);
+  if (error) throw error;
+  return updated;
+};
+
 // --- Groupes ---------------------------------------------------------------
 
 export const createGroup = async ({name}) => {
-  await ensureSupabaseSession();
+  const session = await ensureSupabaseSession();
   const userId = await getSupabaseUserId();
+  // Diagnostic temporaire pour l'erreur 42501 sur "groups" — à retirer une
+  // fois le problème identifié.
+  console.log('[DEBUG createGroup] userId =', userId, '| session.user.id =', session?.user?.id, '| is_anonymous =', session?.user?.is_anonymous);
 
   const {data: group, error} = await supabase
     .from('groups')

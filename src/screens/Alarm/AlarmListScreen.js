@@ -1,12 +1,13 @@
 import React, {useCallback, useState, useEffect} from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Switch, StatusBar, SafeAreaView, Animated,
+  Switch, StatusBar, SafeAreaView, Animated, Image,
 } from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
 import {useTheme} from '../../theme';
 import {useAlarms} from '../../hooks/useAlarms';
-import {getStreak} from '../../services/StorageService';
+import {getStreak, getProfile} from '../../services/StorageService';
+import {hasProfile} from '../../services/GroupsService';
 
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
@@ -255,6 +256,7 @@ const EmptyState = ({onPress, colors, spacing, radius}) => (
 
 const AlarmListScreen = ({navigation}) => {
   const [streak, setStreak] = useState(0);
+  const [profile, setProfile] = useState(null);
   const {colors, spacing, radius, isDark} = useTheme();
   const {alarms, loading, toggle, reload, remove} = useAlarms();
 
@@ -264,11 +266,25 @@ const AlarmListScreen = ({navigation}) => {
       getStreak().then(data => {
         if (data) setStreak(data.current);
       });
+      getProfile().then(p => setProfile(p));
     }, [reload]),
   );
 
   const handleCreate = useCallback(() => navigation.navigate('CreateAlarm'), [navigation]);
   const handlePress = useCallback(alarm => navigation.navigate('CreateAlarm', {alarm}), [navigation]);
+  const handleProfilePress = useCallback(async () => {
+    // Bouton façon ChatGPT en haut à droite : ouvre la connexion/création de
+    // profil pour qui n'en a pas encore (débloque groupes, wellness partagé,
+    // etc.), et sinon amène direct sur le profil existant.
+    if (await hasProfile()) {
+      navigation.navigate('Settings');
+    } else {
+      navigation.navigate('Groups', {
+        screen: 'ProfileGate',
+        params: {returnTo: 'Alarms'},
+      });
+    }
+  }, [navigation]);
   const activeCount = alarms.filter(a => a.enabled).length;
 
   return (
@@ -294,19 +310,52 @@ const AlarmListScreen = ({navigation}) => {
             My Alarms
           </Text>
         </View>
-        <TouchableOpacity
-          onPress={handleCreate}
-          style={{
-            backgroundColor: '#FF6B00',
-            width: 44, height: 44, borderRadius: 22,
-            alignItems: 'center', justifyContent: 'center',
-            shadowColor: '#FF6B00',
-            shadowOffset: {width: 0, height: 4},
-            shadowOpacity: 0.4, shadowRadius: 8, elevation: 6,
-          }}
-          activeOpacity={0.85}>
-          <Text style={{fontSize: 26, color: '#fff', fontWeight: '300', lineHeight: 32}}>+</Text>
-        </TouchableOpacity>
+        <View style={{flexDirection: 'row', alignItems: 'center', gap: 10}}>
+          <TouchableOpacity
+            onPress={handleProfilePress}
+            activeOpacity={0.85}
+            style={{
+              flexDirection: 'row', alignItems: 'center',
+              backgroundColor: colors.surface,
+              borderRadius: radius.full,
+              borderWidth: 0.5, borderColor: colors.borderSubtle,
+              paddingVertical: 8, paddingHorizontal: profile?.name ? 8 : 14,
+              gap: 8,
+            }}>
+            {profile?.photoUrl ? (
+              <Image
+                source={{uri: profile.photoUrl}}
+                style={{width: 22, height: 22, borderRadius: 11}}
+              />
+            ) : profile?.name ? (
+              <View style={{
+                width: 22, height: 22, borderRadius: 11,
+                backgroundColor: colors.accentGlow,
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Text style={{fontSize: 11, fontWeight: '700', color: colors.accent}}>
+                  {profile.name.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            ) : null}
+            <Text style={{fontSize: 13, fontWeight: '600', color: colors.text}}>
+              {profile?.name ? 'Profile' : 'Sign in'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleCreate}
+            style={{
+              backgroundColor: '#FF6B00',
+              width: 44, height: 44, borderRadius: 22,
+              alignItems: 'center', justifyContent: 'center',
+              shadowColor: '#FF6B00',
+              shadowOffset: {width: 0, height: 4},
+              shadowOpacity: 0.4, shadowRadius: 8, elevation: 6,
+            }}
+            activeOpacity={0.85}>
+            <Text style={{fontSize: 26, color: '#fff', fontWeight: '300', lineHeight: 32}}>+</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={[styles.statsRow, {paddingHorizontal: spacing.xl, marginBottom: spacing.lg}]}>
