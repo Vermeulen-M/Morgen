@@ -27,6 +27,7 @@ const ProfileSetupScreen = ({navigation, route}) => {
 
   const [name, setName] = useState('');
   const [localPhotoUri, setLocalPhotoUri] = useState(null);
+  const [localPhotoBase64, setLocalPhotoBase64] = useState(null);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
   // Ne sert qu'à savoir si on ÉDITE un profil déjà existant (pour montrer la
@@ -95,10 +96,18 @@ const ProfileSetupScreen = ({navigation, route}) => {
       quality: 0.7,
       maxWidth: 512,
       maxHeight: 512,
+      includeBase64: true, // l'upload RN depuis un fichier est peu fiable : on envoie les octets
     });
     if (result.didCancel) return;
-    const uri = result.assets?.[0]?.uri;
-    if (uri) setLocalPhotoUri(uri);
+    if (result.errorCode) {
+      Alert.alert('Photo', result.errorMessage || 'Could not open your photos.');
+      return;
+    }
+    const asset = result.assets?.[0];
+    if (asset?.uri) {
+      setLocalPhotoUri(asset.uri);
+      setLocalPhotoBase64(asset.base64 || null);
+    }
   }, []);
 
   const applyLocalWellness = useCallback(async () => {
@@ -141,9 +150,15 @@ const ProfileSetupScreen = ({navigation, route}) => {
           name: trimmed, photoUrl: null, password: newPassword,
         });
         if (localPhotoUri && localPhotoUri.startsWith('file')) {
-          const uploaded = await uploadAvatarPhoto(localPhotoUri);
-          if (uploaded) {
+          try {
+            const uploaded = await uploadAvatarPhoto(localPhotoUri, localPhotoBase64);
             await createOrUpdateProfile({name: trimmed, photoUrl: uploaded});
+          } catch (photoErr) {
+            console.error('Avatar upload failed:', photoErr);
+            Alert.alert(
+              'Profile created, photo not saved',
+              `${photoErr?.message || 'Upload failed'}\n\nYou can add the photo later from your profile.`,
+            );
           }
         }
         await applyLocalWellness();
@@ -155,7 +170,13 @@ const ProfileSetupScreen = ({navigation, route}) => {
 
       let photoUrl = localPhotoUri || null;
       if (localPhotoUri && localPhotoUri.startsWith('file')) {
-        photoUrl = await uploadAvatarPhoto(localPhotoUri);
+        try {
+          photoUrl = await uploadAvatarPhoto(localPhotoUri, localPhotoBase64);
+        } catch (photoErr) {
+          console.error('Avatar upload failed:', photoErr);
+          Alert.alert('Photo not saved', photoErr?.message || 'Upload failed.');
+          return;
+        }
       }
       await createOrUpdateProfile({name: trimmed, photoUrl});
       await applyLocalWellness();
@@ -169,7 +190,7 @@ const ProfileSetupScreen = ({navigation, route}) => {
       setSaving(false);
     }
   }, [
-    name, localPhotoUri, isExistingProfile, newPassword, newPasswordConfirm,
+    name, localPhotoUri, localPhotoBase64, isExistingProfile, newPassword, newPasswordConfirm,
     applyLocalWellness, onDone, goBackOrReturn,
   ]);
 

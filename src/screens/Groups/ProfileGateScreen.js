@@ -67,8 +67,8 @@ const ProfileGateScreen = ({navigation, route}) => {
           fontSize: 12, color: colors.textTertiary, textAlign: 'center',
           marginTop: spacing.lg, lineHeight: 17,
         }}>
-          Only profiles that were secured with an email and password on
-          another device can log in here.
+          Already have a Morgen profile? Log in with your ID (or backup
+          email) and password.
         </Text>
       </View>
     </SafeAreaView>

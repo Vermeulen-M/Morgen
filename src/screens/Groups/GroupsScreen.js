@@ -1,11 +1,13 @@
 import React, {useCallback, useState} from 'react';
 import {
   View, Text, SafeAreaView, StyleSheet, TouchableOpacity,
-  FlatList, RefreshControl,
+  FlatList, RefreshControl, Alert,
 } from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
 import {useTheme} from '../../theme';
-import {listMyGroups} from '../../services/GroupsService';
+import {
+  listMyGroups, listMyPendingGroups, leaveGroup, syncGroupAlarms,
+} from '../../services/GroupsService';
 
 const GroupCard = ({group, onPress, colors, spacing, radius}) => (
   <TouchableOpacity
@@ -40,13 +42,19 @@ const GroupCard = ({group, onPress, colors, spacing, radius}) => (
 const GroupsScreen = ({navigation}) => {
   const {colors, typography, spacing, radius} = useTheme();
   const [groups, setGroups] = useState([]);
+  const [pending, setPending] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const data = await listMyGroups();
+      const [data, pendingData] = await Promise.all([
+        listMyGroups(),
+        listMyPendingGroups(),
+      ]);
       setGroups(data || []);
+      setPending(pendingData || []);
+      syncGroupAlarms(); // une approbation récente apporte de nouvelles alarmes
     } catch (e) {
       console.error('List groups error:', e);
     } finally {
@@ -60,6 +68,24 @@ const GroupsScreen = ({navigation}) => {
     setRefreshing(true);
     await load();
     setRefreshing(false);
+  }, [load]);
+
+  const cancelRequest = useCallback((item) => {
+    Alert.alert(
+      'Cancel request',
+      `Withdraw your request to join "${item.groups?.name}"?`,
+      [
+        {text: 'Keep waiting', style: 'cancel'},
+        {text: 'Withdraw', style: 'destructive', onPress: async () => {
+          try {
+            await leaveGroup(item.groups.id);
+            load();
+          } catch (e) {
+            Alert.alert('Error', 'Could not withdraw the request.');
+          }
+        }},
+      ],
+    );
   }, [load]);
 
   const openGroup = useCallback(group => {
@@ -103,7 +129,37 @@ const GroupsScreen = ({navigation}) => {
         contentContainerStyle={{paddingHorizontal: spacing.xl, paddingBottom: 100, flexGrow: 1}}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-        ListEmptyComponent={!loading ? (
+        ListHeaderComponent={pending.length > 0 ? (
+          <View style={{marginBottom: spacing.md}}>
+            <Text style={{
+              fontSize: 10, fontWeight: '700', letterSpacing: 1.5,
+              color: colors.textTertiary, marginBottom: 10,
+            }}>
+              WAITING FOR APPROVAL
+            </Text>
+            {pending.map(item => (
+              <View key={item.groups?.id} style={{
+                backgroundColor: colors.surface, borderRadius: radius.lg,
+                padding: spacing.md, marginBottom: spacing.sm,
+                flexDirection: 'row', alignItems: 'center',
+                borderWidth: 1, borderColor: colors.borderSubtle, borderStyle: 'dashed',
+              }}>
+                <View style={{flex: 1}}>
+                  <Text style={{fontSize: 15, fontWeight: '600', color: colors.text}}>
+                    {item.groups?.name || 'Group'}
+                  </Text>
+                  <Text style={{fontSize: 12, color: colors.textSecondary, marginTop: 2}}>
+                    An admin has to approve your request
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => cancelRequest(item)}>
+                  <Text style={{fontSize: 12, fontWeight: '600', color: '#FF3B30'}}>Withdraw</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        ) : null}
+        ListEmptyComponent={!loading && pending.length === 0 ? (
           <View style={styles.empty}>
             <View style={{
               width: 72, height: 72, borderRadius: 36,

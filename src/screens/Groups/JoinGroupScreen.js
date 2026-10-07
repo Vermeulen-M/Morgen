@@ -15,14 +15,14 @@ const JoinGroupScreen = ({navigation, route}) => {
 
   const handleJoin = useCallback(async () => {
     const trimmed = code.trim();
-    if (trimmed.length < 4) {
-      Alert.alert('Code invalide', 'Entre le code à 6 caractères que tu as reçu.');
+    if (trimmed.length !== 6) {
+      Alert.alert('Invalid code', 'Enter the 6-character code you received.');
       return;
     }
 
     if (!(await hasProfile())) {
       navigation.navigate('ProfileGate', {
-        onDone: () => navigation.replace('JoinGroup'),
+        onDone: () => navigation.replace('JoinGroup', {code: trimmed}),
       });
       return;
     }
@@ -31,13 +31,13 @@ const JoinGroupScreen = ({navigation, route}) => {
     try {
       await joinGroupWithCode(trimmed);
       Alert.alert(
-        'Demande envoyée',
-        "Un admin du groupe doit approuver ta demande avant que tu puisses voir les alarmes.",
+        'Request sent',
+        'A group admin has to approve you before you can see the alarms. Your request shows up in your Groups list.',
         [{text: 'OK', onPress: () => navigation.replace('GroupsList')}],
       );
     } catch (e) {
       console.error('Join group error:', e);
-      Alert.alert('Erreur', e?.message || 'Code invalide ou expiré.');
+      Alert.alert('Could not join', e?.message || 'Invalid or expired code.');
     } finally {
       setSaving(false);
     }

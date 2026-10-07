@@ -175,8 +175,8 @@ export const deviceTimeForGroupAlarm = (ga) => {
 
 // Horizon de programmation à l'avance : l'alarme sonne même si l'app n'est
 // pas rouverte (la synchro en arrière-plan complète la fenêtre ensuite).
-const GROUP_SLOTS = 60;
-const GROUP_HORIZON_DAYS = 30;
+export const GROUP_MAX_SLOTS = 400; // Android plafonne à ~500 alarmes par appli
+const GROUP_HORIZON_DAYS = 365;
 
 // Alarme à date précise ('YYYY-MM-DD' + heure) : un seul instant, aussi loin
 // qu'on veut. En mode 'same_instant' l'heure est celle du fuseau de l'admin.
@@ -194,7 +194,7 @@ export const dateOccurrence = (ga) => {
   return when.getTime() > Date.now() ? when : null;
 };
 
-export const upcomingOccurrences = (ga) => {
+export const upcomingOccurrences = (ga, maxSlots = GROUP_MAX_SLOTS) => {
   if (ga.date) {
     const one = dateOccurrence(ga);
     return one ? [one] : [];
@@ -203,7 +203,7 @@ export const upcomingOccurrences = (ga) => {
   const limit = Date.now() + GROUP_HORIZON_DAYS * 24 * 3600 * 1000;
   const result = [];
   let after = new Date();
-  while (result.length < GROUP_SLOTS) {
+  while (result.length < maxSlots) {
     const next = nextOccurrence(ga.time, ga.days, zone, after);
     if (!next || next.getTime() > limit) break;
     result.push(next);
@@ -215,17 +215,17 @@ export const upcomingOccurrences = (ga) => {
 export const groupNotificationId = (groupAlarmId, slot = 0) => `g_${groupAlarmId}_${slot}`;
 
 export const cancelGroupAlarm = async (groupAlarmId) => {
-  for (let i = 0; i < GROUP_SLOTS + 4; i++) {
-    await notifee.cancelNotification(groupNotificationId(groupAlarmId, i));
-  }
-  await notifee.cancelNotification(`g_${groupAlarmId}`); // ancien format
+  const ids = [`g_${groupAlarmId}`]; // ancien format
+  for (let i = 0; i < GROUP_MAX_SLOTS + 4; i++) ids.push(groupNotificationId(groupAlarmId, i));
+  await notifee.cancelTriggerNotifications(ids);
 };
 
-export const scheduleGroupAlarm = async (groupAlarm, groupName) => {
+// Renvoie {count, until} : nombre de sonneries programmées et date de la dernière.
+export const scheduleGroupAlarm = async (groupAlarm, groupName, maxSlots = GROUP_MAX_SLOTS) => {
   await createAlarmChannel();
   await cancelGroupAlarm(groupAlarm.id);
 
-  const occurrences = upcomingOccurrences(groupAlarm);
+  const occurrences = upcomingOccurrences(groupAlarm, maxSlots);
 
   for (let i = 0; i < occurrences.length; i++) {
     await notifee.createTriggerNotification(
@@ -254,4 +254,8 @@ export const scheduleGroupAlarm = async (groupAlarm, groupName) => {
       {type: TriggerType.TIMESTAMP, timestamp: occurrences[i].getTime()},
     );
   }
+  return {
+    count: occurrences.length,
+    until: occurrences.length ? occurrences[occurrences.length - 1].getTime() : 0,
+  };
 };

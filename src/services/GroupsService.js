@@ -202,27 +202,46 @@ export const loginWithEmail = async (email, password) => {
   return profileRow;
 };
 
-// Upload une photo de profil vers le bucket Supabase Storage "avatars".
-// Si le bucket n'existe pas encore côté projet, on n'échoue pas tout le
-// profil pour ça : on log et on renvoie null (le nom seul reste valide).
-export const uploadAvatarPhoto = async (localUri) => {
-  try {
-    const userId = await getSupabaseUserId();
+const base64ToBytes = (b64) => {
+  const binary = global.atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+};
+
+// Envoie la photo dans le bucket "avatars" (dossier = id de l'utilisateur).
+// On envoie des octets (base64 fourni par le sélecteur d'images) plutôt qu'un
+// blob : fetch(file://).blob() produit souvent un fichier vide en React Native.
+// Lance une erreur lisible en cas d'échec (l'écran l'affiche).
+export const uploadAvatarPhoto = async (localUri, base64 = null) => {
+  const userId = await getSupabaseUserId();
+  const path = `${userId}/avatar.jpg`;
+
+  let body;
+  if (base64) {
+    body = base64ToBytes(base64);
+  } else {
     const response = await fetch(localUri);
-    const blob = await response.blob();
-    const path = `${userId}/avatar.jpg`;
-
-    const {error} = await supabase.storage
-      .from('avatars')
-      .upload(path, blob, {contentType: 'image/jpeg', upsert: true});
-    if (error) throw error;
-
-    const {data} = supabase.storage.from('avatars').getPublicUrl(path);
-    return data?.publicUrl ?? null;
-  } catch (e) {
-    console.error('Avatar upload failed (le profil sera enregistré sans photo):', e);
-    return null;
+    body = await response.arrayBuffer();
   }
+  if (!body || body.byteLength === 0) {
+    throw new Error('The selected photo is empty — pick another one.');
+  }
+
+  const {error} = await supabase.storage
+    .from('avatars')
+    .upload(path, body, {contentType: 'image/jpeg', upsert: true});
+  if (error) {
+    throw new Error(
+      error.message?.includes('Bucket not found')
+        ? 'Photo storage is not set up yet (bucket "avatars" missing).'
+        : error.message || 'Upload failed.',
+    );
+  }
+
+  const {data} = supabase.storage.from('avatars').getPublicUrl(path);
+  // Même chemin à chaque envoi : on change l'URL pour contourner le cache.
+  return data?.publicUrl ? `${data.publicUrl}?v=${Date.now()}` : null;
 };
 
 export const createOrUpdateProfile = async ({name, photoUrl}) => {
