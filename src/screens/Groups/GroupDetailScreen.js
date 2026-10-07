@@ -7,10 +7,15 @@ import {useFocusEffect} from '@react-navigation/native';
 import Share from 'react-native-share';
 import {useTheme} from '../../theme';
 import {getSupabaseUserId} from '../../services/supabaseClient';
+import {INVITE_LINK_BASE} from '../../config';
+import {deviceTimeForGroupAlarm, dateOccurrence} from '../../services/NotificationService';
 import {
   listGroupMembers, listPendingMembers, approveMember, removeMember,
   promoteToAdmin, leaveGroup, createInvite,
+  listGroupAlarms, listTodayCompletions, deleteGroupAlarm, syncGroupAlarms,
 } from '../../services/GroupsService';
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const MemberRow = ({member, isSelf, isAdmin, canManage, colors, spacing, radius, onPromote, onRemove}) => {
   const profile = member.profiles || {};
@@ -66,6 +71,8 @@ const GroupDetailScreen = ({navigation, route}) => {
   const [members, setMembers] = useState([]);
   const [pending, setPending] = useState([]);
   const [myId, setMyId] = useState(null);
+  const [alarms, setAlarms] = useState([]);
+  const [invite, setInvite] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
@@ -78,6 +85,18 @@ const GroupDetailScreen = ({navigation, route}) => {
       setMyId(userId);
       setMembers(approved);
       setPending(pendingList);
+
+      const groupAlarms = await listGroupAlarms(groupId);
+      const withDone = await Promise.all(groupAlarms.map(async a => {
+        try {
+          const done = await listTodayCompletions(a.id);
+          return {...a, done};
+        } catch {
+          return {...a, done: []};
+        }
+      }));
+      setAlarms(withDone);
+      syncGroupAlarms();
     } catch (e) {
       console.error('Load group detail error:', e);
     }
@@ -94,22 +113,47 @@ const GroupDetailScreen = ({navigation, route}) => {
   const me = members.find(m => m.profile_id === myId);
   const amAdmin = me?.role === 'admin';
 
-  const handleInvite = useCallback(async () => {
+  const shareInvite = useCallback(async (invite) => {
     try {
-      const invite = await createInvite(groupId, {expiresInHours: 48});
       // Le lien n'ouvre l'écran de join que si Morgen est déjà installé
       // (custom scheme, pas de vrai domaine encore) — le code reste donné
       // en repli pour ceux qui ne l'ont pas.
-      const link = `morgen://join/${invite.code}`;
+      const link = INVITE_LINK_BASE
+        ? `${INVITE_LINK_BASE}?code=${invite.code}`
+        : `morgen://join/${invite.code}`;
       await Share.open({
         message: `Join "${groupName}" on Morgen: ${link}\n(or enter code ${invite.code} manually — valid 48h, one use)`,
         failOnCancel: false,
       });
     } catch (e) {
-      console.error('Create invite error:', e);
-      Alert.alert('Erreur', "Impossible de créer une invitation.");
+      console.log('Share cancelled/failed:', e?.message);
     }
-  }, [groupId, groupName]);
+  }, [groupName]);
+
+  // Crée une invitation et l'affiche à l'écran (code visible + bouton partage).
+  const handleInvite = useCallback(async () => {
+    try {
+      const created = await createInvite(groupId, {expiresInHours: 48});
+      setInvite(created);
+    } catch (e) {
+      console.error('Create invite error:', e);
+      Alert.alert('Error', 'Could not create an invitation.');
+    }
+  }, [groupId]);
+
+  const handleDeleteAlarm = useCallback((alarmId) => {
+    Alert.alert('Delete alarm', 'Remove this alarm for everyone in the group?', [
+      {text: 'Cancel', style: 'cancel'},
+      {text: 'Delete', style: 'destructive', onPress: async () => {
+        try {
+          await deleteGroupAlarm(alarmId);
+          load();
+        } catch (e) {
+          Alert.alert('Erreur', "Impossible de supprimer l'alarme.");
+        }
+      }},
+    ]);
+  }, [load]);
 
   const handleApprove = useCallback(async (profileId) => {
     try {
@@ -197,6 +241,46 @@ const GroupDetailScreen = ({navigation, route}) => {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         showsVerticalScrollIndicator={false}>
 
+        {invite && (
+          <View style={{
+            backgroundColor: colors.surface, borderRadius: radius.xl,
+            padding: spacing.xl, marginBottom: spacing.xl, alignItems: 'center',
+            borderWidth: 1.5, borderColor: colors.accent,
+          }}>
+            <Text style={{fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: colors.textTertiary}}>
+              INVITE CODE
+            </Text>
+            <Text selectable style={{
+              fontSize: 40, fontWeight: '800', letterSpacing: 8,
+              color: colors.text, marginVertical: spacing.md,
+            }}>
+              {invite.code}
+            </Text>
+            <Text style={{fontSize: 12, color: colors.textSecondary, textAlign: 'center', lineHeight: 18}}>
+              Valid 48 hours, works once. The person enters it in
+              Groups → Join with code, then you approve them.
+            </Text>
+            <View style={{flexDirection: 'row', gap: 10, marginTop: spacing.lg}}>
+              <TouchableOpacity
+                onPress={() => shareInvite(invite)}
+                style={{
+                  backgroundColor: colors.accent, borderRadius: radius.lg,
+                  paddingVertical: 12, paddingHorizontal: 24,
+                }}>
+                <Text style={{color: '#fff', fontWeight: '700', fontSize: 14}}>Share</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setInvite(null)}
+                style={{
+                  backgroundColor: colors.surfaceHighlight, borderRadius: radius.lg,
+                  paddingVertical: 12, paddingHorizontal: 24,
+                }}>
+                <Text style={{color: colors.textSecondary, fontWeight: '700', fontSize: 14}}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {amAdmin && pending.length > 0 && (
           <>
             <Text style={styles.sectionLabel(colors)}>PENDING APPROVAL · {pending.length}</Text>
@@ -254,14 +338,71 @@ const GroupDetailScreen = ({navigation, route}) => {
         <Text style={[styles.sectionLabel(colors), {marginTop: spacing.xl}]}>
           GROUP ALARMS
         </Text>
-        <View style={{
-          backgroundColor: colors.surface, borderRadius: radius.lg,
-          padding: spacing.lg, marginBottom: spacing.sm,
-        }}>
-          <Text style={{fontSize: 13, color: colors.textSecondary, lineHeight: 18}}>
-            Coming next: creating shared alarms for this group.
-          </Text>
-        </View>
+        {alarms.length === 0 && (
+          <View style={{
+            backgroundColor: colors.surface, borderRadius: radius.lg,
+            padding: spacing.lg, marginBottom: spacing.sm,
+          }}>
+            <Text style={{fontSize: 13, color: colors.textSecondary, lineHeight: 18}}>
+              {amAdmin
+                ? 'No alarm yet. Create one — every member will get it.'
+                : 'No alarm yet. An admin can create one for the group.'}
+            </Text>
+          </View>
+        )}
+        {alarms.filter(a => !a.date || dateOccurrence(a)).map(a => (
+          <View key={a.id} style={{
+            backgroundColor: colors.surface, borderRadius: radius.lg,
+            padding: spacing.lg, marginBottom: spacing.sm,
+          }}>
+            <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
+              <View>
+                <Text style={{fontSize: 28, fontWeight: '700', color: colors.text}}>
+                  {deviceTimeForGroupAlarm(a)}
+                </Text>
+                {a.timezone_mode === 'same_instant' && a.timezone ? (
+                  <Text style={{fontSize: 11, color: colors.textTertiary}}>
+                    {a.time} {a.timezone.split('/').pop().replace('_', ' ')} time
+                  </Text>
+                ) : (
+                  <Text style={{fontSize: 11, color: colors.textTertiary}}>Local time</Text>
+                )}
+              </View>
+              {amAdmin && (
+                <TouchableOpacity onPress={() => handleDeleteAlarm(a.id)}>
+                  <Text style={{fontSize: 12, fontWeight: '600', color: '#FF3B30'}}>Delete</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <Text style={{fontSize: 12, color: colors.textSecondary, marginTop: 2}}>
+              {a.date
+                ? new Date(a.date + 'T12:00:00').toDateString()
+                : (a.days || []).length === 7
+                  ? 'Every day'
+                  : (a.days || []).map(d => DAY_NAMES[d]).join(' · ')}
+              {'  •  '}{a.challenge ? a.challenge : 'no challenge'}
+            </Text>
+            {a.note ? (
+              <Text style={{fontSize: 13, color: colors.text, marginTop: 6}}>{a.note}</Text>
+            ) : null}
+            <Text style={{fontSize: 12, fontWeight: '600', color: colors.accent, marginTop: 8}}>
+              Up today: {a.done.length}/{members.length}
+              {a.done.length > 0
+                ? ' — ' + a.done.map(c => c.profiles?.name || '?').join(', ')
+                : ''}
+            </Text>
+          </View>
+        ))}
+        {amAdmin && (
+          <TouchableOpacity
+            onPress={() => navigation.navigate('CreateGroupAlarm', {groupId})}
+            style={{
+              borderRadius: radius.lg, padding: spacing.md, alignItems: 'center',
+              borderWidth: 1, borderColor: colors.accent, borderStyle: 'dashed',
+            }}>
+            <Text style={{fontSize: 14, fontWeight: '700', color: colors.accent}}>+ Add group alarm</Text>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity onPress={handleLeave} style={{marginTop: spacing.xl, alignSelf: 'center'}}>
           <Text style={{fontSize: 13, fontWeight: '600', color: '#FF3B30'}}>

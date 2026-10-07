@@ -7,7 +7,7 @@ import {launchImageLibrary} from 'react-native-image-picker';
 import {useTheme} from '../../theme';
 import {
   createOrUpdateProfile, uploadAvatarPhoto, updateWellnessProfile,
-  linkEmailToProfile,
+  linkEmailToProfile, createAccountWithId, regenerateRecoveryCode,
 } from '../../services/GroupsService';
 import {getProfile, getWellness} from '../../services/StorageService';
 
@@ -37,6 +37,18 @@ const ProfileSetupScreen = ({navigation, route}) => {
   const [password, setPassword] = useState('');
   const [securing, setSecuring] = useState(false);
   const [secured, setSecured] = useState(false);
+  // ID de connexion du profil (affiché pour qu'on puisse le retrouver tant
+  // qu'on est connecté). Absent sur les anciens profils anonymes.
+  const [loginId, setLoginId] = useState(null);
+
+  // Mot de passe choisi à la création d'un NOUVEAU profil (pas pour éditer
+  // un profil existant — le mot de passe ne se change pas ici).
+  const [newPassword, setNewPassword] = useState('');
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
+  // Une fois le compte créé, on affiche l'ID + le code de secours une seule
+  // fois — l'utilisateur doit confirmer les avoir notés avant de continuer.
+  const [createdCredentials, setCreatedCredentials] = useState(null);
+  const [confirmedSaved, setConfirmedSaved] = useState(false);
 
   React.useEffect(() => {
     getProfile().then(p => {
@@ -44,6 +56,7 @@ const ProfileSetupScreen = ({navigation, route}) => {
         setName(p.name || '');
         setLocalPhotoUri(p.photoUrl || null);
         setIsExistingProfile(true);
+        setLoginId(p.loginId || null);
       }
       setLoaded(true);
     });
@@ -88,6 +101,17 @@ const ProfileSetupScreen = ({navigation, route}) => {
     if (uri) setLocalPhotoUri(uri);
   }, []);
 
+  const applyLocalWellness = useCallback(async () => {
+    // Si des réglages wellness existaient déjà en local (avant qu'un profil
+    // existe), on les rattache au profil maintenant qu'il y en a un.
+    const localWellness = await getWellness();
+    if (localWellness && Object.keys(localWellness).length > 0) {
+      for (const [field, value] of Object.entries(localWellness)) {
+        await updateWellnessProfile(field, value);
+      }
+    }
+  }, []);
+
   const handleSave = useCallback(async () => {
     const trimmed = name.trim();
     if (!trimmed) {
@@ -95,38 +119,154 @@ const ProfileSetupScreen = ({navigation, route}) => {
       return;
     }
 
+    if (!isExistingProfile) {
+      // Nouveau profil = nouveau compte (ID généré + mot de passe choisi
+      // ici) — plus d'auth anonyme.
+      if (!newPassword || newPassword.length < 6) {
+        Alert.alert('Mot de passe trop court', 'Choisis au moins 6 caractères.');
+        return;
+      }
+      if (newPassword !== newPasswordConfirm) {
+        Alert.alert('Les mots de passe ne correspondent pas', 'Vérifie les deux champs.');
+        return;
+      }
+    }
+
     setSaving(true);
     try {
-      let photoUrl = null;
+      if (!isExistingProfile) {
+        // Le compte doit exister avant d'envoyer la photo (l'upload a besoin
+        // d'une session) : on crée le compte, puis on rattache la photo.
+        const credentials = await createAccountWithId({
+          name: trimmed, photoUrl: null, password: newPassword,
+        });
+        if (localPhotoUri && localPhotoUri.startsWith('file')) {
+          const uploaded = await uploadAvatarPhoto(localPhotoUri);
+          if (uploaded) {
+            await createOrUpdateProfile({name: trimmed, photoUrl: uploaded});
+          }
+        }
+        await applyLocalWellness();
+        // On affiche l'ID + le code de secours avant de fermer l'écran —
+        // onDone()/goBackOrReturn() n'arrivent qu'après confirmation.
+        setCreatedCredentials(credentials);
+        return;
+      }
+
+      let photoUrl = localPhotoUri || null;
       if (localPhotoUri && localPhotoUri.startsWith('file')) {
         photoUrl = await uploadAvatarPhoto(localPhotoUri);
-      } else if (localPhotoUri) {
-        photoUrl = localPhotoUri;
       }
-
       await createOrUpdateProfile({name: trimmed, photoUrl});
-
-      // Première création : si des réglages wellness existaient déjà en
-      // local (avant qu'un profil existe), on les rattache au profil
-      // maintenant qu'il y en a un, pour qu'ils suivent la personne.
-      const localWellness = await getWellness();
-      if (localWellness && Object.keys(localWellness).length > 0) {
-        for (const [field, value] of Object.entries(localWellness)) {
-          await updateWellnessProfile(field, value);
-        }
-      }
+      await applyLocalWellness();
 
       onDone?.();
       goBackOrReturn();
     } catch (e) {
       console.error('Save profile error:', e);
-      Alert.alert('Erreur', "Impossible d'enregistrer ton profil pour le moment.");
+      Alert.alert('Erreur', e?.message || "Impossible d'enregistrer ton profil pour le moment.");
     } finally {
       setSaving(false);
     }
-  }, [name, localPhotoUri, onDone, goBackOrReturn]);
+  }, [
+    name, localPhotoUri, isExistingProfile, newPassword, newPasswordConfirm,
+    applyLocalWellness, onDone, goBackOrReturn,
+  ]);
+
+  const handleConfirmCredentialsSaved = useCallback(() => {
+    onDone?.();
+    goBackOrReturn();
+  }, [onDone, goBackOrReturn]);
+
+  const handleRegenerateRecoveryCode = useCallback(async () => {
+    try {
+      const code = await regenerateRecoveryCode();
+      Alert.alert(
+        'New recovery code',
+        `${code}\n\nSave it now — it won't be shown again, and your old code no longer works.`,
+      );
+    } catch (e) {
+      console.error('Regenerate recovery code error:', e);
+      Alert.alert('Erreur', e?.message || 'Impossible de générer un nouveau code pour le moment.');
+    }
+  }, []);
 
   if (!loaded) return <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]} />;
+
+  if (createdCredentials) {
+    return (
+      <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]}>
+        <View style={{padding: spacing.xl, flex: 1, justifyContent: 'center'}}>
+          <Text style={{
+            fontSize: 20, fontWeight: '700', color: colors.text,
+            textAlign: 'center', marginBottom: spacing.md,
+          }}>
+            Save these now
+          </Text>
+          <Text style={{
+            fontSize: 13, color: colors.textSecondary, textAlign: 'center',
+            marginBottom: spacing.xl, lineHeight: 19,
+          }}>
+            This is the only time they'll be shown. You'll need your ID and
+            password to log back in on another phone — and the recovery code
+            if you ever forget your password.
+          </Text>
+
+          <Text style={styles.sectionLabel(colors)}>YOUR ID</Text>
+          <Text selectable style={{
+            fontSize: 22, fontWeight: '700', letterSpacing: 2, color: colors.accent,
+            backgroundColor: colors.surface, borderRadius: radius.md,
+            padding: spacing.lg, textAlign: 'center',
+            borderWidth: 0.5, borderColor: colors.borderSubtle,
+            marginBottom: spacing.lg,
+          }}>
+            {createdCredentials.loginId}
+          </Text>
+
+          <Text style={styles.sectionLabel(colors)}>RECOVERY CODE</Text>
+          <Text selectable style={{
+            fontSize: 18, fontWeight: '700', letterSpacing: 1, color: colors.text,
+            backgroundColor: colors.surface, borderRadius: radius.md,
+            padding: spacing.lg, textAlign: 'center',
+            borderWidth: 0.5, borderColor: colors.borderSubtle,
+            marginBottom: spacing.xl,
+          }}>
+            {createdCredentials.recoveryCode}
+          </Text>
+
+          <TouchableOpacity
+            onPress={() => setConfirmedSaved(v => !v)}
+            activeOpacity={0.8}
+            style={{flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xl}}>
+            <View style={{
+              width: 20, height: 20, borderRadius: 4, marginRight: spacing.md,
+              borderWidth: 1.5, borderColor: colors.accent,
+              backgroundColor: confirmedSaved ? colors.accent : 'transparent',
+            }} />
+            <Text style={{fontSize: 13, color: colors.textSecondary, flex: 1}}>
+              I've saved my ID and recovery code somewhere safe.
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={handleConfirmCredentialsSaved}
+            disabled={!confirmedSaved}
+            activeOpacity={0.85}
+            style={{
+              backgroundColor: confirmedSaved ? colors.accent : colors.surfaceHighlight,
+              borderRadius: radius.lg, paddingVertical: 16, alignItems: 'center',
+            }}>
+            <Text style={{
+              color: confirmedSaved ? '#fff' : colors.textTertiary,
+              fontWeight: '700', fontSize: 15,
+            }}>
+              Continue
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]}>
@@ -143,7 +283,7 @@ const ProfileSetupScreen = ({navigation, route}) => {
         </Text>
         <TouchableOpacity onPress={handleSave} disabled={saving}>
           <Text style={{fontSize: 15, fontWeight: '700', color: colors.accent}}>
-            {saving ? '...' : 'Save'}
+            {saving ? '...' : (isExistingProfile ? 'Save' : 'Create')}
           </Text>
         </TouchableOpacity>
       </View>
@@ -200,18 +340,92 @@ const ProfileSetupScreen = ({navigation, route}) => {
           }}
         />
 
+        {!isExistingProfile && (
+          <View style={{width: '100%', marginTop: spacing.xl}}>
+            <Text style={styles.sectionLabel(colors)}>CHOOSE A PASSWORD</Text>
+            <Text style={{
+              fontSize: 12, color: colors.textSecondary,
+              marginBottom: spacing.lg, lineHeight: 18,
+            }}>
+              A unique ID will be generated for you. Together with this
+              password, it's how you'll log back in on another phone.
+            </Text>
+            <TextInput
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder="Password (min. 6 characters)"
+              placeholderTextColor={colors.textTertiary}
+              secureTextEntry
+              style={{
+                width: '100%',
+                fontSize: 15, color: colors.text,
+                backgroundColor: colors.surface,
+                borderRadius: radius.md, padding: spacing.lg,
+                borderWidth: 0.5, borderColor: colors.borderSubtle,
+                marginBottom: spacing.md,
+              }}
+            />
+            <TextInput
+              value={newPasswordConfirm}
+              onChangeText={setNewPasswordConfirm}
+              placeholder="Confirm password"
+              placeholderTextColor={colors.textTertiary}
+              secureTextEntry
+              style={{
+                width: '100%',
+                fontSize: 15, color: colors.text,
+                backgroundColor: colors.surface,
+                borderRadius: radius.md, padding: spacing.lg,
+                borderWidth: 0.5, borderColor: colors.borderSubtle,
+              }}
+            />
+          </View>
+        )}
+
         {isExistingProfile && (
           <View style={{width: '100%', marginTop: spacing.xl}}>
             <View style={{height: 0.5, backgroundColor: colors.borderSubtle, marginBottom: spacing.xl}} />
-            <Text style={styles.sectionLabel(colors)}>SECURE YOUR PROFILE</Text>
+
+            {loginId && (
+              <>
+                <Text style={styles.sectionLabel(colors)}>YOUR ID</Text>
+                <Text selectable style={{
+                  fontSize: 22, fontWeight: '700', letterSpacing: 2, color: colors.accent,
+                  backgroundColor: colors.surface, borderRadius: radius.md,
+                  padding: spacing.lg, textAlign: 'center', width: '100%',
+                  borderWidth: 0.5, borderColor: colors.borderSubtle,
+                  marginBottom: spacing.sm,
+                }}>
+                  {loginId}
+                </Text>
+                <Text style={{
+                  fontSize: 12, color: colors.textSecondary,
+                  marginBottom: spacing.xl, lineHeight: 18,
+                }}>
+                  You need this ID (and your password) to log back in on
+                  another phone. Keep it somewhere safe.
+                </Text>
+              </>
+            )}
+
+            <Text style={styles.sectionLabel(colors)}>BACKUP EMAIL (RECOMMENDED)</Text>
             <Text style={{
               fontSize: 12, color: colors.textSecondary,
               marginBottom: spacing.lg, lineHeight: 18,
             }}>
               {secured
-                ? "This profile can now log in from any device with this email."
-                : 'Add an email and password so you can log back into this exact profile from a new phone or after reinstalling.'}
+                ? "This profile can now also log in from any device with this email."
+                : "If you ever lose your ID, you won't be able to get back into this profile. Add a real email so you can log in with it instead."}
             </Text>
+
+            <TouchableOpacity
+              onPress={handleRegenerateRecoveryCode}
+              activeOpacity={0.8}
+              style={{marginBottom: spacing.lg}}>
+              <Text style={{fontSize: 12, fontWeight: '600', color: colors.accent}}>
+                Generate a new recovery code
+              </Text>
+            </TouchableOpacity>
 
             {!secured && (
               <>

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join a group on Morgen</title>
+<style>
+  :root { --bg:#0e0e12; --card:#1a1a22; --text:#f4f4f7; --muted:#9a9aa8; --accent:#ff6b00; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f6f9; --card:#ffffff; --text:#14141a; --muted:#6a6a78; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    background:var(--bg); color:var(--text); font-family:-apple-system, system-ui, Segoe UI, Roboto, sans-serif; padding:16px; }
+  .card { background:var(--card); border-radius:24px; padding:32px 24px; max-width:380px; width:100%; text-align:center;
+    box-shadow:0 8px 32px rgba(0,0,0,.18); }
+  .brand { font-size:11px; font-weight:700; letter-spacing:.2em; color:var(--accent); }
+  h1 { font-size:22px; margin:8px 0 6px; }
+  p { color:var(--muted); font-size:14px; line-height:1.5; margin:0 0 20px; }
+  .code { font-size:38px; font-weight:800; letter-spacing:.3em; margin:4px 0 20px; user-select:all; }
+  a.btn { display:block; background:var(--accent); color:#fff; text-decoration:none; font-weight:700;
+    padding:14px; border-radius:14px; margin-bottom:10px; }
+  a.alt { display:block; color:var(--muted); font-size:13px; text-decoration:underline; margin-top:6px; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">MORGEN</div>
+  <h1>You're invited to a group</h1>
+  <p id="msg">Open the link on your phone to join. The code works once and expires after 48 hours.</p>
+  <div class="code" id="code">······</div>
+  <a class="btn" id="open" href="#">Open in Morgen</a>
+  <a class="alt" id="store" href="#">Don't have Morgen yet? Get the app</a>
+  <p class="hidden" id="manual" style="margin-top:16px">
+    In Morgen: Groups → <b>Join with code</b> → enter the code above.
+  </p>
+</div>
+<script>
+  // Remplace par le lien Play Store quand l'app est publiée.
+  var PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.morgen.app';
+  var PACKAGE = 'com.morgen.app';
+
+  var params = new URLSearchParams(location.search);
+  var code = (params.get('code') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  var isAndroid = /android/i.test(navigator.userAgent);
+
+  document.getElementById('code').textContent = code || '??????';
+  document.getElementById('store').href = PLAY_STORE_URL;
+
+  var deepLink = 'morgen://join/' + code;
+  // Intent Android : ouvre l'app si installée, sinon bascule vers le Play Store.
+  var intentUrl = 'intent://join/' + code + '#Intent;scheme=morgen;package=' + PACKAGE +
+    ';S.browser_fallback_url=' + encodeURIComponent(PLAY_STORE_URL) + ';end';
+
+  var openBtn = document.getElementById('open');
+  openBtn.href = isAndroid ? intentUrl : deepLink;
+
+  if (!code) {
+    document.getElementById('msg').textContent = 'This invitation link is missing its code.';
+    openBtn.classList.add('hidden');
+  }
+  if (!isAndroid) document.getElementById('manual').classList.remove('hidden');
+  if (isAndroid && code) setTimeout(function () { location.href = intentUrl; }, 400);
+</script>
+</body>
+</html>

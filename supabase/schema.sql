@@ -184,3 +184,6 @@ create policy "alarm_completions: readable by group co-members" on alarm_complet
         and group_members.status = 'approved'
     )
   );
+
+-- NB : les comptes ID + mot de passe et les policies RLS corrigées sont dans
+-- supabase/migration_002_accounts_and_rls.sql (à exécuter APRÈS ce fichier).

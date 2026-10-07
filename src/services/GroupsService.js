@@ -1,7 +1,11 @@
 import {
   supabase, ensureSupabaseSession, getSupabaseUserId, setSupabaseSession,
 } from './supabaseClient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {getProfile, saveProfile} from './StorageService';
+import {
+  scheduleGroupAlarm, cancelGroupAlarm, getDeviceTimeZone, GROUP_MAX_SLOTS,
+} from './NotificationService';
 
 // Code d'invitation lisible à voix haute, sans caractères ambigus (pas de 0/O, 1/I).
 const INVITE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -20,11 +24,150 @@ export const hasProfile = async () => {
   return !!(profile && profile.name);
 };
 
-// --- Retrouver un profil sur un autre appareil (email + mot de passe) -----
-// Le compte de base reste anonyme (zéro friction). "Sécuriser" un profil le
-// convertit en compte permanent avec email/mot de passe SANS changer son id
-// (auth.uid()), donc tout ce qui est déjà lié à ce profil (groupes, wellness)
-// reste accessible. Se reconnecter ailleurs restaure ce même compte.
+// --- Comptes ID + mot de passe ---------------------------------------------
+// Remplace l'auth anonyme (bug RLS 42501 jamais élucidé sur "groups") par un
+// vrai compte dès la création du profil : un ID unique généré + un mot de
+// passe choisi par l'utilisateur. Email interne synthétique "<ID>@morgen.local"
+// — Supabase a besoin d'un format email pour signUp/signInWithPassword, mais
+// personne n'a besoin de connaître ni de voir cette adresse.
+// Important côté Dashboard Supabase : Authentication > Providers > Email >
+// "Confirm email" doit être désactivé (cette adresse ne peut jamais recevoir
+// de lien de confirmation).
+
+const ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sans caractères ambigus
+const generateLoginId = (length = 8) => {
+  let id = '';
+  for (let i = 0; i < length; i++) {
+    id += ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)];
+  }
+  return id;
+};
+
+const generateRecoveryCode = () => {
+  const block = () => {
+    let s = '';
+    for (let i = 0; i < 4; i++) {
+      s += ID_CHARS[Math.floor(Math.random() * ID_CHARS.length)];
+    }
+    return s;
+  };
+  return `${block()}-${block()}-${block()}`;
+};
+
+const loginIdToEmail = (loginId) => `${loginId.trim().toUpperCase()}@morgen.local`;
+
+// Crée un nouveau compte (ID généré + mot de passe choisi), son profil, et
+// un code de secours à usage unique. Réessaie avec un nouvel ID en cas de
+// collision improbable (email déjà pris). Renvoie {loginId, recoveryCode} —
+// à afficher une seule fois à l'utilisateur, qui doit les noter lui-même.
+export const createAccountWithId = async ({name, photoUrl, password}) => {
+  let lastError;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const loginId = generateLoginId();
+    const email = loginIdToEmail(loginId);
+    const {data, error} = await supabase.auth.signUp({email, password});
+
+    if (!error) {
+      setSupabaseSession(data.session);
+      const userId = data.user.id;
+
+      const {error: profileError} = await supabase
+        .from('profiles')
+        .upsert({id: userId, name, photo_url: photoUrl || null});
+      if (profileError) throw profileError;
+
+      // L'ID de connexion vit dans une table privée (profile_secrets), pas
+      // sur profiles : les co-membres d'un groupe lisent profiles.
+      const {error: secretError} = await supabase
+        .from('profile_secrets')
+        .insert({profile_id: userId, login_id: loginId});
+      if (secretError) throw secretError;
+
+      const recoveryCode = generateRecoveryCode();
+      const {error: recoveryError} = await supabase.rpc('set_recovery_code', {
+        p_recovery_code: recoveryCode,
+      });
+      if (recoveryError) throw recoveryError;
+
+      await saveProfile({id: userId, name, photoUrl: photoUrl || null, loginId});
+      return {loginId, recoveryCode};
+    }
+
+    lastError = error;
+    // Collision d'ID (email déjà pris) -> on réessaie avec un nouvel ID.
+    // Toute autre erreur (mot de passe trop faible, etc.) est remontée direct.
+    if (!/registered|already/i.test(error.message || '')) {
+      throw error;
+    }
+  }
+  throw lastError;
+};
+
+// Récupère l'ID de connexion du compte connecté (table privée).
+const fetchOwnLoginId = async (userId) => {
+  const {data} = await supabase
+    .from('profile_secrets')
+    .select('login_id')
+    .eq('profile_id', userId)
+    .maybeSingle();
+  return data?.login_id ?? null;
+};
+
+export const loginWithId = async (loginId, password) => {
+  const email = loginIdToEmail(loginId);
+  const {data, error} = await supabase.auth.signInWithPassword({email, password});
+  if (error) throw error;
+  setSupabaseSession(data.session);
+
+  const {data: profileRow, error: profileError} = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', data.user.id)
+    .maybeSingle();
+  if (profileError) throw profileError;
+
+  if (profileRow) {
+    await saveProfile({
+      id: profileRow.id,
+      name: profileRow.name,
+      photoUrl: profileRow.photo_url,
+      loginId: await fetchOwnLoginId(profileRow.id),
+    });
+  }
+  return profileRow;
+};
+
+// Mot de passe oublié : vérifie l'ID + le code de secours côté serveur (RPC
+// SECURITY DEFINER, voir schema.sql) et change le mot de passe sans jamais
+// nécessiter de session active. Le code est à usage unique — une fois
+// consommé, pense à en régénérer un (regenerateRecoveryCode, une fois
+// reconnecté) sinon un nouvel oubli de mot de passe sera impossible à
+// résoudre depuis l'app.
+export const resetPasswordWithRecoveryCode = async (loginId, recoveryCode, newPassword) => {
+  const {data, error} = await supabase.rpc('reset_password_with_recovery_code', {
+    p_login_id: loginId,
+    p_recovery_code: recoveryCode,
+    p_new_password: newPassword,
+  });
+  if (error) throw error;
+  if (!data) throw new Error('ID ou code de secours incorrect.');
+  return true;
+};
+
+// Génère et enregistre un nouveau code de secours pour l'utilisateur
+// actuellement connecté (ex: juste après un reset, ou depuis les réglages).
+export const regenerateRecoveryCode = async () => {
+  const recoveryCode = generateRecoveryCode();
+  const {error} = await supabase.rpc('set_recovery_code', {p_recovery_code: recoveryCode});
+  if (error) throw error;
+  return recoveryCode;
+};
+
+// --- Ajouter un vrai email (optionnel, en secours du couple ID+mot de passe) -
+// Ne change pas l'id (auth.uid()), donc tout ce qui est déjà lié au profil
+// (groupes, wellness) reste accessible. Se reconnecter ailleurs avec cet
+// email restaure ce même compte — utile si la personne préfère un vrai email
+// à son ID généré.
 
 export const linkEmailToProfile = async (email, password) => {
   const {data, error} = await supabase.auth.updateUser({email, password});
@@ -53,6 +196,7 @@ export const loginWithEmail = async (email, password) => {
       id: profileRow.id,
       name: profileRow.name,
       photoUrl: profileRow.photo_url,
+      loginId: await fetchOwnLoginId(profileRow.id),
     });
   }
   return profileRow;
@@ -91,7 +235,15 @@ export const createOrUpdateProfile = async ({name, photoUrl}) => {
     .single();
   if (error) throw error;
 
-  await saveProfile({id: userId, name, photoUrl: photoUrl || null});
+  // On conserve le loginId local : il ne vient pas de ce formulaire et ne
+  // doit pas disparaître quand on édite le nom ou la photo.
+  const existing = await getProfile();
+  await saveProfile({
+    id: userId,
+    name,
+    photoUrl: photoUrl || null,
+    loginId: existing?.loginId ?? null,
+  });
   return data;
 };
 
@@ -125,11 +277,8 @@ export const updateWellnessProfile = async (field, value) => {
 // --- Groupes ---------------------------------------------------------------
 
 export const createGroup = async ({name}) => {
-  const session = await ensureSupabaseSession();
+  await ensureSupabaseSession();
   const userId = await getSupabaseUserId();
-  // Diagnostic temporaire pour l'erreur 42501 sur "groups" — à retirer une
-  // fois le problème identifié.
-  console.log('[DEBUG createGroup] userId =', userId, '| session.user.id =', session?.user?.id, '| is_anonymous =', session?.user?.is_anonymous);
 
   const {data: group, error} = await supabase
     .from('groups')
@@ -161,6 +310,18 @@ export const listMyGroups = async () => {
   return data;
 };
 
+// Demandes envoyées, en attente d'approbation par un admin.
+export const listMyPendingGroups = async () => {
+  const userId = await getSupabaseUserId();
+  const {data, error} = await supabase
+    .from('group_members')
+    .select('role, status, groups(id, name, created_by)')
+    .eq('profile_id', userId)
+    .eq('status', 'pending');
+  if (error) throw error;
+  return data;
+};
+
 // --- Invitations (usage unique, expirent, approbation manuelle) -----------
 
 export const createInvite = async (groupId, {expiresInHours = 48} = {}) => {
@@ -176,39 +337,18 @@ export const createInvite = async (groupId, {expiresInHours = 48} = {}) => {
   return data;
 };
 
+// Rejoint en statut "pending" — un admin doit approuver manuellement
+// (vérification visuelle via la photo de profil, décidée plus tôt). Tout se
+// passe côté serveur (fonction join_group_with_code, voir migration_002) :
+// vérification du code, usage unique et insertion sont atomiques, et personne
+// ne peut s'insérer directement dans group_members.
 export const joinGroupWithCode = async (code) => {
   await ensureSupabaseSession();
-  const userId = await getSupabaseUserId();
-
-  const {data: invite, error: inviteError} = await supabase
-    .from('group_invites')
-    .select('*')
-    .eq('code', code.toUpperCase())
-    .is('used_at', null)
-    .gt('expires_at', new Date().toISOString())
-    .maybeSingle();
-  if (inviteError) throw inviteError;
-  if (!invite) {
-    throw new Error('Code invalide ou expiré');
-  }
-
-  // Rejoint en statut "pending" — un admin doit approuver manuellement
-  // (vérification visuelle via la photo de profil, décidée plus tôt).
-  const {error: memberError} = await supabase.from('group_members').insert({
-    group_id: invite.group_id,
-    profile_id: userId,
-    role: 'member',
-    status: 'pending',
+  const {data, error} = await supabase.rpc('join_group_with_code', {
+    p_code: code.trim().toUpperCase(),
   });
-  if (memberError) throw memberError;
-
-  // Le code devient inutilisable — usage unique, ne peut pas être transféré après coup.
-  await supabase
-    .from('group_invites')
-    .update({used_at: new Date().toISOString(), used_by: userId})
-    .eq('id', invite.id);
-
-  return invite.group_id;
+  if (error) throw error;
+  return data;
 };
 
 // --- Membres et rôle admin (façon WhatsApp : multi-admin possible) --------
@@ -268,7 +408,7 @@ export const promoteToAdmin = async (groupId, profileId) => {
 // --- Alarmes de groupe (défi optionnel, 2 modes de fuseau horaire) --------
 
 export const createGroupAlarm = async (groupId, {
-  time, days, challenge = null, timezoneMode = 'same_instant', note = '',
+  time, days, challenge = null, timezoneMode = 'local', timezone = null, date = null, note = '',
 }) => {
   const userId = await getSupabaseUserId();
   const {data, error} = await supabase
@@ -279,6 +419,8 @@ export const createGroupAlarm = async (groupId, {
       days,
       challenge, // null = pas de défi, comme décidé
       timezone_mode: timezoneMode, // 'same_instant' | 'local'
+      date, // 'YYYY-MM-DD' pour une alarme unique, null = récurrente
+      timezone, // fuseau IANA de l'admin (utile pour 'same_instant')
       note,
       created_by: userId,
     })
@@ -321,4 +463,70 @@ export const listTodayCompletions = async (alarmId) => {
     .eq('date', today);
   if (error) throw error;
   return data;
+};
+
+
+export const deleteGroupAlarm = async (alarmId) => {
+  const {error} = await supabase.from('group_alarms').delete().eq('id', alarmId);
+  if (error) throw error;
+  await cancelGroupAlarm(alarmId);
+};
+
+// --- Synchronisation locale ------------------------------------------------
+// Récupère les alarmes de tous mes groupes, reprogramme les notifications
+// locales (prochaine occurrence) et annule celles qui n'existent plus.
+
+const SYNCED_KEY = 'ac_synced_group_alarms';
+const SCHEDULE_KEY = 'ac_group_alarm_schedule';
+
+// Reprogramme uniquement ce qui a changé (alarme modifiée, fuseau de
+// l'appareil changé) ou dont la fenêtre programmée est à moitié écoulée.
+export const syncGroupAlarms = async () => {
+  try {
+    const profile = await getProfile();
+    if (!profile?.id) return;
+    await ensureSupabaseSession();
+
+    const memberships = await listMyGroups();
+    const all = [];
+    for (const m of memberships) {
+      const group = m.groups;
+      if (!group) continue;
+      const alarms = await listGroupAlarms(group.id);
+      for (const a of alarms) all.push({alarm: a, groupName: group.name});
+    }
+
+    // Budget Android partagé entre toutes les alarmes de groupe.
+    const recurring = all.filter(x => !x.alarm.date).length || 1;
+    const cap = Math.max(30, Math.floor(GROUP_MAX_SLOTS / recurring));
+
+    const deviceZone = getDeviceTimeZone();
+    const stored = JSON.parse((await AsyncStorage.getItem(SCHEDULE_KEY)) || '{}');
+    const next = {};
+    const now = Date.now();
+
+    for (const {alarm, groupName} of all) {
+      const sig = JSON.stringify([
+        alarm.time, alarm.days, alarm.date, alarm.timezone_mode, alarm.timezone,
+        alarm.challenge, alarm.note, groupName, deviceZone, cap,
+      ]);
+      const prev = stored[alarm.id];
+      const fresh = prev && prev.sig === sig && prev.until - now > prev.span / 2;
+      if (fresh) {
+        next[alarm.id] = prev;
+        continue;
+      }
+      const {count, until} = await scheduleGroupAlarm(alarm, groupName, cap);
+      next[alarm.id] = {sig, until, span: Math.max(until - now, 0), count};
+    }
+
+    for (const id of Object.keys(stored)) {
+      if (!next[id]) await cancelGroupAlarm(id);
+    }
+    await AsyncStorage.setItem(SCHEDULE_KEY, JSON.stringify(next));
+    await AsyncStorage.removeItem(SYNCED_KEY);
+  } catch (e) {
+    // Pas de réseau / pas de session : on garde ce qui est déjà programmé.
+    console.log('syncGroupAlarms skipped:', e?.message);
+  }
 };

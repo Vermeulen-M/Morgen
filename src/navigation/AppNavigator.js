@@ -14,9 +14,11 @@ import GroupsScreen from '../screens/Groups/GroupsScreen';
 import CreateGroupScreen from '../screens/Groups/CreateGroupScreen';
 import JoinGroupScreen from '../screens/Groups/JoinGroupScreen';
 import GroupDetailScreen from '../screens/Groups/GroupDetailScreen';
+import CreateGroupAlarmScreen from '../screens/Groups/CreateGroupAlarmScreen';
 import ProfileSetupScreen from '../screens/Groups/ProfileSetupScreen';
 import ProfileGateScreen from '../screens/Groups/ProfileGateScreen';
 import LoginScreen from '../screens/Groups/LoginScreen';
+import ResetPasswordScreen from '../screens/Groups/ResetPasswordScreen';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
 
 const Tab = createBottomTabNavigator();
@@ -115,7 +117,17 @@ const GroupsNavigator = () => {
         component={LoginScreen}
         options={{presentation: 'modal'}}
       />
+      <GroupsStack.Screen
+        name="ResetPassword"
+        component={ResetPasswordScreen}
+        options={{presentation: 'modal'}}
+      />
       <GroupsStack.Screen name="GroupDetail" component={GroupDetailScreen} />
+      <GroupsStack.Screen
+        name="CreateGroupAlarm"
+        component={CreateGroupAlarmScreen}
+        options={{presentation: 'modal'}}
+      />
     </GroupsStack.Navigator>
   );
 };

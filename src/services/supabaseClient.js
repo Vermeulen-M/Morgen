@@ -14,28 +14,25 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   },
 });
 
-// Chaque appareil devient un utilisateur "anonyme" Supabase — pas de compte,
-// pas d'email, pas de mot de passe visible pour l'utilisateur, mais un vrai
-// auth.uid() stable côté serveur qui permet d'écrire des règles RLS fiables
-// (voir supabase/schema.sql). C'est ce qui remplace le "juste un nom" —
-// le nom reste juste une étiquette d'affichage, l'identité réelle est cet id.
+// Chaque profil est un vrai compte Supabase (ID généré + mot de passe choisi
+// à la création — voir GroupsService.createAccountWithId), pas une session
+// anonyme : l'auth anonyme a été abandonnée après un bug RLS 42501 jamais
+// élucidé (auth.uid() ne matchait jamais created_by malgré une session
+// anonyme apparemment valide côté client). On ne crée donc plus de session
+// ici automatiquement — soit il y en a déjà une (restaurée depuis
+// AsyncStorage par le client au démarrage), soit l'utilisateur doit se
+// (re)connecter via Login/ProfileSetup.
 let ensureSessionPromise = null;
 
 export const ensureSupabaseSession = () => {
   if (!ensureSessionPromise) {
     ensureSessionPromise = (async () => {
       const {data} = await supabase.auth.getSession();
-      if (data?.session) {
-        return data.session;
-      }
-
-      const {data: signInData, error} = await supabase.auth.signInAnonymously();
-      if (error) {
-        console.error('Supabase anonymous sign-in failed:', error);
+      if (!data?.session) {
         ensureSessionPromise = null;
-        throw error;
+        throw new Error('Session expirée — reconnecte-toi.');
       }
-      return signInData.session;
+      return data.session;
     })();
   }
   return ensureSessionPromise;

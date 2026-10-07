@@ -4,10 +4,11 @@ import {
   TextInput, SafeAreaView, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import {useTheme} from '../../theme';
-import {loginWithEmail} from '../../services/GroupsService';
+import {loginWithId, loginWithEmail} from '../../services/GroupsService';
 
-// Reconnecte un profil déjà sécurisé (email+mot de passe) sur cet appareil —
-// utile après une réinstallation ou sur un nouveau téléphone.
+// Reconnecte un profil existant sur cet appareil (par ID+mot de passe, ou
+// par email s'il en a ajouté un) — utile après une réinstallation ou sur un
+// nouveau téléphone.
 const LoginScreen = ({navigation, route}) => {
   const {colors, spacing, radius} = useTheme();
   const onDone = route?.params?.onDone;
@@ -20,20 +21,25 @@ const LoginScreen = ({navigation, route}) => {
     }
   }, [returnTo, navigation]);
 
-  const [email, setEmail] = useState('');
+  const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [saving, setSaving] = useState(false);
 
   const handleLogin = useCallback(async () => {
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail || !password) {
-      Alert.alert('Champs requis', 'Entre ton email et ton mot de passe.');
+    const trimmedId = loginId.trim();
+    if (!trimmedId || !password) {
+      Alert.alert('Champs requis', 'Entre ton ID et ton mot de passe.');
       return;
     }
 
     setSaving(true);
     try {
-      const profile = await loginWithEmail(trimmedEmail, password);
+      // Un ID généré n'a pas de "@" ; s'il y en a un, l'utilisateur a tapé
+      // un email (profil sécurisé avec un email plus tôt) — on route vers
+      // le bon chemin de connexion dans les deux cas.
+      const profile = trimmedId.includes('@')
+        ? await loginWithEmail(trimmedId, password)
+        : await loginWithId(trimmedId, password);
       if (!profile) {
         Alert.alert(
           'Profil introuvable',
@@ -45,11 +51,11 @@ const LoginScreen = ({navigation, route}) => {
       goBackOrReturn();
     } catch (e) {
       console.error('Login error:', e);
-      Alert.alert('Erreur', e?.message || 'Email ou mot de passe incorrect.');
+      Alert.alert('Erreur', e?.message || 'ID/email ou mot de passe incorrect.');
     } finally {
       setSaving(false);
     }
-  }, [email, password, onDone, goBackOrReturn]);
+  }, [loginId, password, onDone, goBackOrReturn]);
 
   return (
     <SafeAreaView style={[styles.container, {backgroundColor: colors.background}]}>
@@ -79,18 +85,17 @@ const LoginScreen = ({navigation, route}) => {
             fontSize: 13, color: colors.textSecondary, textAlign: 'center',
             marginBottom: spacing.xl, lineHeight: 19,
           }}>
-            Only works if this profile was secured with an email and
-            password on another device.
+            Log back into an existing profile with its ID (or email, if you
+            added one).
           </Text>
 
-          <Text style={styles.sectionLabel(colors)}>EMAIL</Text>
+          <Text style={styles.sectionLabel(colors)}>ID OR EMAIL</Text>
           <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="you@example.com"
+            value={loginId}
+            onChangeText={setLoginId}
+            placeholder="e.g. A7K3M9QP"
             placeholderTextColor={colors.textTertiary}
-            autoCapitalize="none"
-            keyboardType="email-address"
+            autoCapitalize="characters"
             autoFocus
             style={{
               fontSize: 15, color: colors.text,
@@ -113,8 +118,17 @@ const LoginScreen = ({navigation, route}) => {
               backgroundColor: colors.surface,
               borderRadius: radius.md, padding: spacing.lg,
               borderWidth: 0.5, borderColor: colors.borderSubtle,
+              marginBottom: spacing.lg,
             }}
           />
+
+          <TouchableOpacity
+            onPress={() => navigation.navigate('ResetPassword')}
+            activeOpacity={0.8}>
+            <Text style={{fontSize: 12, fontWeight: '600', color: colors.accent, textAlign: 'center'}}>
+              Forgot your password?
+            </Text>
+          </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

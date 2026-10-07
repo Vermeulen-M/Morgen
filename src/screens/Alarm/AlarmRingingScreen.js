@@ -14,6 +14,7 @@ import {Worklets} from 'react-native-worklets-core';
 import {useTheme} from '../../theme';
 import {updateStreak, incrementChallengesCompleted} from '../../services/StorageService';
 import {startAlarmSound, stopAlarmSound} from '../../services/SoundService';
+import {markAlarmComplete, syncGroupAlarms} from '../../services/GroupsService';
 
 const ShakeChallengeUI = ({target, onComplete, colors}) => {
   const [count, setCount] = useState(0);
@@ -436,6 +437,13 @@ const AlarmRingingScreen = ({navigation, route}) => {
     stopAlarmSound();
     await updateStreak();
     await incrementChallengesCompleted();
+    if (alarm.groupAlarmId) {
+      // Visibilité passive pour le groupe, puis reprogrammation du lendemain.
+      try { await markAlarmComplete(alarm.groupAlarmId); } catch (e) {
+        console.log('markAlarmComplete failed:', e?.message);
+      }
+      syncGroupAlarms();
+    }
     setSolved(true);
     setTimeout(() => navigation.goBack(), 1800);
   };
@@ -535,12 +543,22 @@ const AlarmRingingScreen = ({navigation, route}) => {
           {alarm.challenge === 'workout' && (
             <WorkoutChallengeUI onComplete={handleChallengeComplete} colors={colors} />
           )}
+          {alarm.challenge === 'none' && (
+            <TouchableOpacity
+              onPress={handleChallengeComplete}
+              style={{
+                backgroundColor: colors.accent, borderRadius: 16,
+                paddingVertical: 20, alignItems: 'center',
+              }}>
+              <Text style={{fontSize: 18, fontWeight: '700', color: '#fff'}}>I'm awake</Text>
+            </TouchableOpacity>
+          )}
         </ChallengeErrorBoundary>
       </View>
 
       <View style={{paddingHorizontal: 24, paddingBottom: spacing.xxxl}}>
         <Text style={{fontSize: 11, color: colors.textTertiary, textAlign: 'center', letterSpacing: 0.5}}>
-          Complete the challenge to dismiss
+          {alarm.challenge === 'none' ? 'Tap to confirm you are up' : 'Complete the challenge to dismiss'}
         </Text>
         {showSafetyExit && (
           <TouchableOpacity
