@@ -28,7 +28,7 @@ const LoginScreen = ({navigation, route}) => {
   const handleLogin = useCallback(async () => {
     const trimmedId = loginId.trim();
     if (!trimmedId || !password) {
-      Alert.alert('Champs requis', 'Entre ton ID et ton mot de passe.');
+      Alert.alert('Champs requis', 'Enter your pseudo (or email) and password.');
       return;
     }
 
@@ -85,17 +85,16 @@ const LoginScreen = ({navigation, route}) => {
             fontSize: 13, color: colors.textSecondary, textAlign: 'center',
             marginBottom: spacing.xl, lineHeight: 19,
           }}>
-            Log back into an existing profile with its ID (or email, if you
-            added one).
+            Log back into an existing profile with your pseudo (or email).
           </Text>
 
-          <Text style={styles.sectionLabel(colors)}>ID OR EMAIL</Text>
+          <Text style={styles.sectionLabel(colors)}>PSEUDO OR EMAIL</Text>
           <TextInput
             value={loginId}
             onChangeText={setLoginId}
-            placeholder="e.g. A7K3M9QP"
+            placeholder="pseudo or email"
             placeholderTextColor={colors.textTertiary}
-            autoCapitalize="characters"
+            autoCapitalize="none"
             autoFocus
             style={{
               fontSize: 15, color: colors.text,

@@ -6,7 +6,7 @@ import {
 import {launchImageLibrary} from 'react-native-image-picker';
 import {useTheme} from '../../theme';
 import {
-  createOrUpdateProfile, uploadAvatarPhoto, updateWellnessProfile,
+  createOrUpdateProfile, uploadAvatarPhoto, isValidPseudo, updateWellnessProfile,
   linkEmailToProfile, createAccountWithId, regenerateRecoveryCode,
 } from '../../services/GroupsService';
 import {getProfile, getWellness} from '../../services/StorageService';
@@ -44,6 +44,8 @@ const ProfileSetupScreen = ({navigation, route}) => {
 
   // Mot de passe choisi à la création d'un NOUVEAU profil (pas pour éditer
   // un profil existant — le mot de passe ne se change pas ici).
+  const [pseudo, setPseudo] = useState('');
+  const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newPasswordConfirm, setNewPasswordConfirm] = useState('');
   // Une fois le compte créé, on affiche l'ID + le code de secours une seule
@@ -131,6 +133,14 @@ const ProfileSetupScreen = ({navigation, route}) => {
     if (!isExistingProfile) {
       // Nouveau profil = nouveau compte (ID généré + mot de passe choisi
       // ici) — plus d'auth anonyme.
+      if (!isValidPseudo(pseudo)) {
+        Alert.alert('Pseudo', '3 to 20 characters: letters, digits or _ only.');
+        return;
+      }
+      if (newEmail.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail.trim())) {
+        Alert.alert('Email', 'This email looks invalid.');
+        return;
+      }
       if (!newPassword || newPassword.length < 6) {
         Alert.alert('Mot de passe trop court', 'Choisis au moins 6 caractères.');
         return;
@@ -148,6 +158,7 @@ const ProfileSetupScreen = ({navigation, route}) => {
         // d'une session) : on crée le compte, puis on rattache la photo.
         const credentials = await createAccountWithId({
           name: trimmed, photoUrl: null, password: newPassword,
+          pseudo, email: newEmail,
         });
         if (localPhotoUri && localPhotoUri.startsWith('file')) {
           try {
@@ -190,7 +201,7 @@ const ProfileSetupScreen = ({navigation, route}) => {
       setSaving(false);
     }
   }, [
-    name, localPhotoUri, localPhotoBase64, isExistingProfile, newPassword, newPasswordConfirm,
+    name, pseudo, newEmail, localPhotoUri, localPhotoBase64, isExistingProfile, newPassword, newPasswordConfirm,
     applyLocalWellness, onDone, goBackOrReturn,
   ]);
 
@@ -228,12 +239,12 @@ const ProfileSetupScreen = ({navigation, route}) => {
             fontSize: 13, color: colors.textSecondary, textAlign: 'center',
             marginBottom: spacing.xl, lineHeight: 19,
           }}>
-            This is the only time they'll be shown. You'll need your ID and
+            This is the only time they'll be shown. You'll need your pseudo and
             password to log back in on another phone — and the recovery code
             if you ever forget your password.
           </Text>
 
-          <Text style={styles.sectionLabel(colors)}>YOUR ID</Text>
+          <Text style={styles.sectionLabel(colors)}>YOUR PSEUDO</Text>
           <Text selectable style={{
             fontSize: 22, fontWeight: '700', letterSpacing: 2, color: colors.accent,
             backgroundColor: colors.surface, borderRadius: radius.md,
@@ -265,7 +276,7 @@ const ProfileSetupScreen = ({navigation, route}) => {
               backgroundColor: confirmedSaved ? colors.accent : 'transparent',
             }} />
             <Text style={{fontSize: 13, color: colors.textSecondary, flex: 1}}>
-              I've saved my ID and recovery code somewhere safe.
+              I've saved my pseudo and recovery code somewhere safe.
             </Text>
           </TouchableOpacity>
 
@@ -363,14 +374,57 @@ const ProfileSetupScreen = ({navigation, route}) => {
 
         {!isExistingProfile && (
           <View style={{width: '100%', marginTop: spacing.xl}}>
-            <Text style={styles.sectionLabel(colors)}>CHOOSE A PASSWORD</Text>
+            <Text style={styles.sectionLabel(colors)}>YOUR PSEUDO</Text>
             <Text style={{
               fontSize: 12, color: colors.textSecondary,
               marginBottom: spacing.lg, lineHeight: 18,
             }}>
-              A unique ID will be generated for you. Together with this
-              password, it's how you'll log back in on another phone.
+              Your login name — unique, easy to remember. You'll log in with
+              it (or your email) and your password.
             </Text>
+            <TextInput
+              value={pseudo}
+              onChangeText={setPseudo}
+              placeholder="e.g. vermeulen_m"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={{
+                width: '100%',
+                fontSize: 15, color: colors.text,
+                backgroundColor: colors.surface,
+                borderRadius: radius.md, padding: spacing.lg,
+                borderWidth: 0.5, borderColor: colors.borderSubtle,
+                marginBottom: spacing.xl,
+              }}
+            />
+
+            <Text style={styles.sectionLabel(colors)}>EMAIL (OPTIONAL, RECOMMENDED)</Text>
+            <Text style={{
+              fontSize: 12, color: colors.textSecondary,
+              marginBottom: spacing.lg, lineHeight: 18,
+            }}>
+              Lets you log in with your email too, and helps if you forget your pseudo.
+            </Text>
+            <TextInput
+              value={newEmail}
+              onChangeText={setNewEmail}
+              placeholder="you@example.com"
+              placeholderTextColor={colors.textTertiary}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoCorrect={false}
+              style={{
+                width: '100%',
+                fontSize: 15, color: colors.text,
+                backgroundColor: colors.surface,
+                borderRadius: radius.md, padding: spacing.lg,
+                borderWidth: 0.5, borderColor: colors.borderSubtle,
+                marginBottom: spacing.xl,
+              }}
+            />
+
+            <Text style={styles.sectionLabel(colors)}>CHOOSE A PASSWORD</Text>
             <TextInput
               value={newPassword}
               onChangeText={setNewPassword}
@@ -409,7 +463,7 @@ const ProfileSetupScreen = ({navigation, route}) => {
 
             {loginId && (
               <>
-                <Text style={styles.sectionLabel(colors)}>YOUR ID</Text>
+                <Text style={styles.sectionLabel(colors)}>YOUR PSEUDO</Text>
                 <Text selectable style={{
                   fontSize: 22, fontWeight: '700', letterSpacing: 2, color: colors.accent,
                   backgroundColor: colors.surface, borderRadius: radius.md,

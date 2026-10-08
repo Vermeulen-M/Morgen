@@ -60,14 +60,25 @@ const loginIdToEmail = (loginId) => `${loginId.trim().toUpperCase()}@morgen.loca
 // un code de secours à usage unique. Réessaie avec un nouvel ID en cas de
 // collision improbable (email déjà pris). Renvoie {loginId, recoveryCode} —
 // à afficher une seule fois à l'utilisateur, qui doit les noter lui-même.
-export const createAccountWithId = async ({name, photoUrl, password}) => {
-  let lastError;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const loginId = generateLoginId();
-    const email = loginIdToEmail(loginId);
-    const {data, error} = await supabase.auth.signUp({email, password});
+export const normalizePseudo = (p) => (p || '').trim().toUpperCase();
+export const isValidPseudo = (p) => /^[A-Z0-9_]{3,20}$/.test(normalizePseudo(p));
 
-    if (!error) {
+export const createAccountWithId = async ({name, photoUrl, password, pseudo, email}) => {
+  const loginId = normalizePseudo(pseudo);
+  if (!isValidPseudo(loginId)) {
+    throw new Error('Pseudo: 3 to 20 characters, letters, digits or _ only.');
+  }
+  {
+    const authEmail = loginIdToEmail(loginId);
+    const {data, error} = await supabase.auth.signUp({email: authEmail, password});
+
+    if (error) {
+      if (/registered|already/i.test(error.message || '')) {
+        throw new Error('This pseudo is already taken. Choose another one.');
+      }
+      throw error;
+    }
+    {
       setSupabaseSession(data.session);
       const userId = data.user.id;
 
@@ -90,17 +101,20 @@ export const createAccountWithId = async ({name, photoUrl, password}) => {
       if (recoveryError) throw recoveryError;
 
       await saveProfile({id: userId, name, photoUrl: photoUrl || null, loginId});
-      return {loginId, recoveryCode};
-    }
 
-    lastError = error;
-    // Collision d'ID (email déjà pris) -> on réessaie avec un nouvel ID.
-    // Toute autre erreur (mot de passe trop faible, etc.) est remontée direct.
-    if (!/registered|already/i.test(error.message || '')) {
-      throw error;
+      // Email optionnel : permet de se connecter avec lui aussi.
+      let emailLinked = false;
+      if (email && email.trim()) {
+        try {
+          await supabase.auth.updateUser({email: email.trim()});
+          emailLinked = true;
+        } catch (e) {
+          console.warn('Link email failed:', e);
+        }
+      }
+      return {loginId, recoveryCode, emailLinked};
     }
   }
-  throw lastError;
 };
 
 // Récupère l'ID de connexion du compte connecté (table privée).
@@ -328,9 +342,12 @@ export const uploadGroupPhoto = async (groupId, base64) => {
   if (error) throw new Error(error.message || 'Upload failed.');
   const {data} = supabase.storage.from('avatars').getPublicUrl(path);
   const url = data?.publicUrl ? `${data.publicUrl}?v=${Date.now()}` : null;
-  const {error: updError} = await supabase
-    .from('groups').update({photo_url: url}).eq('id', groupId);
+  const {data: updated, error: updError} = await supabase
+    .from('groups').update({photo_url: url}).eq('id', groupId).select('id');
   if (updError) throw updError;
+  if (!updated || updated.length === 0) {
+    throw new Error('Photo uploaded but not saved to the group (permission). Tell Claude.');
+  }
   return url;
 };
 
