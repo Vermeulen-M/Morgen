@@ -246,6 +246,7 @@ export const scheduleGroupAlarm = async (groupAlarm, groupName, maxSlots = GROUP
           groupAlarmId: String(groupAlarm.id),
           groupName: groupName || '',
           label: groupAlarm.note || '',
+          link: groupAlarm.link || '',
           time: deviceTimeForGroupAlarm(groupAlarm),
           challenge: groupAlarm.challenge || 'none',
           shakeCount: '20',

@@ -1,10 +1,11 @@
 import React, {useCallback, useState} from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  SafeAreaView, Image, Alert, ScrollView, RefreshControl,
+  SafeAreaView, Image, Alert, ScrollView, RefreshControl, Linking,
 } from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
 import Share from 'react-native-share';
+import {launchImageLibrary} from 'react-native-image-picker';
 import {useTheme} from '../../theme';
 import {getSupabaseUserId} from '../../services/supabaseClient';
 import {INVITE_LINK_BASE} from '../../config';
@@ -13,6 +14,7 @@ import {
   listGroupMembers, listPendingMembers, approveMember, removeMember,
   promoteToAdmin, leaveGroup, createInvite,
   listGroupAlarms, listTodayCompletions, deleteGroupAlarm, syncGroupAlarms,
+  uploadGroupPhoto, getGroupPhoto,
 } from '../../services/GroupsService';
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -67,6 +69,7 @@ const MemberRow = ({member, isSelf, isAdmin, canManage, colors, spacing, radius,
 const GroupDetailScreen = ({navigation, route}) => {
   const {colors, spacing, radius} = useTheme();
   const {groupId, groupName} = route.params;
+  const [photoUrl, setPhotoUrl] = useState(route.params.photoUrl || null);
 
   const [members, setMembers] = useState([]);
   const [pending, setPending] = useState([]);
@@ -83,6 +86,7 @@ const GroupDetailScreen = ({navigation, route}) => {
         listPendingMembers(groupId),
       ]);
       setMyId(userId);
+      getGroupPhoto(groupId).then(u => u && setPhotoUrl(u)).catch(() => {});
       setMembers(approved);
       setPending(pendingList);
 
@@ -103,6 +107,17 @@ const GroupDetailScreen = ({navigation, route}) => {
   }, [groupId]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const changePhoto = useCallback(async () => {
+    const r = await launchImageLibrary({mediaType: 'photo', quality: 0.7, maxWidth: 512, maxHeight: 512, includeBase64: true});
+    const a = r.assets?.[0];
+    if (!a?.base64) return;
+    try {
+      setPhotoUrl(await uploadGroupPhoto(groupId, a.base64));
+    } catch (e) {
+      Alert.alert('Photo', e.message || 'Upload failed.');
+    }
+  }, [groupId]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -240,6 +255,23 @@ const GroupDetailScreen = ({navigation, route}) => {
         contentContainerStyle={{padding: spacing.xl, paddingBottom: 100}}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         showsVerticalScrollIndicator={false}>
+
+        <View style={{alignItems: 'center', marginBottom: spacing.xl}}>
+          {photoUrl ? (
+            <Image source={{uri: photoUrl}} style={{width: 88, height: 88, borderRadius: 26}} />
+          ) : (
+            <View style={{width: 88, height: 88, borderRadius: 26, backgroundColor: colors.accent + '18', alignItems: 'center', justifyContent: 'center'}}>
+              <Text style={{fontSize: 36, color: colors.accent}}>⊙</Text>
+            </View>
+          )}
+          {amAdmin && (
+            <TouchableOpacity onPress={changePhoto} style={{marginTop: 8}}>
+              <Text style={{fontSize: 12, fontWeight: '600', color: colors.accent}}>
+                {photoUrl ? 'Change photo' : 'Add photo'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {invite && (
           <View style={{
@@ -384,6 +416,13 @@ const GroupDetailScreen = ({navigation, route}) => {
             </Text>
             {a.note ? (
               <Text style={{fontSize: 13, color: colors.text, marginTop: 6}}>{a.note}</Text>
+            ) : null}
+            {a.link && /^https:\/\//i.test(a.link) ? (
+              <TouchableOpacity onPress={() => Linking.openURL(a.link)} style={{marginTop: 6}}>
+                <Text numberOfLines={1} style={{fontSize: 12, color: colors.accent, textDecorationLine: 'underline'}}>
+                  🔗 {a.link}
+                </Text>
+              </TouchableOpacity>
             ) : null}
             <Text style={{fontSize: 12, fontWeight: '600', color: colors.accent, marginTop: 8}}>
               Up today: {a.done.length}/{members.length}

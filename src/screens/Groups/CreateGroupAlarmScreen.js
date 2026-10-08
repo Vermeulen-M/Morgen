@@ -41,6 +41,7 @@ const CreateGroupAlarmScreen = ({navigation, route}) => {
   const [days, setDays] = useState([1, 2, 3, 4, 5]);
   const [challenge, setChallenge] = useState(null);
   const [note, setNote] = useState('');
+  const [link, setLink] = useState('');
   const [tzMode, setTzMode] = useState('same_instant');
   const [kind, setKind] = useState('repeat'); // 'repeat' | 'once'
   const tomorrow = new Date(Date.now() + 24 * 3600 * 1000);
@@ -71,6 +72,13 @@ const CreateGroupAlarmScreen = ({navigation, route}) => {
       Alert.alert('Pick at least one day');
       return;
     }
+    // Lien de réunion optionnel : on n'accepte que https:// (sécurité).
+    let cleanLink = link.trim();
+    if (cleanLink && !/^https?:\/\//i.test(cleanLink)) cleanLink = `https://${cleanLink}`;
+    if (cleanLink && !/^https:\/\/[^\s]+$/i.test(cleanLink)) {
+      Alert.alert('Invalid link', 'The meeting link must start with https://');
+      return;
+    }
     setSaving(true);
     try {
       await createGroupAlarm(groupId, {
@@ -81,6 +89,7 @@ const CreateGroupAlarmScreen = ({navigation, route}) => {
         timezoneMode: tzMode,
         timezone: adminZone,
         note: note.trim(),
+        link: cleanLink || null,
       });
       await syncGroupAlarms();
       navigation.goBack();
@@ -90,7 +99,7 @@ const CreateGroupAlarmScreen = ({navigation, route}) => {
     } finally {
       setSaving(false);
     }
-  }, [groupId, hours, minutes, days, challenge, note, tzMode, adminZone, kind, dYear, dMonth, dDay, navigation]);
+  }, [groupId, hours, minutes, days, challenge, note, tzMode, adminZone, kind, dYear, dMonth, dDay, link, navigation]);
 
   const label = {
     fontSize: 10, fontWeight: '700', letterSpacing: 1.5,
@@ -237,6 +246,21 @@ const CreateGroupAlarmScreen = ({navigation, route}) => {
           placeholder="Morning run at 6!"
           placeholderTextColor={colors.textTertiary}
           maxLength={80}
+          style={{
+            fontSize: 15, color: colors.text, backgroundColor: colors.surface,
+            borderRadius: radius.md, padding: spacing.lg,
+            borderWidth: 0.5, borderColor: colors.borderSubtle,
+          }}
+        />
+        <Text style={[label, {marginTop: spacing.lg}]}>Meeting link (optional)</Text>
+        <TextInput
+          value={link}
+          onChangeText={setLink}
+          placeholder="https://zoom.us/j/..."
+          placeholderTextColor={colors.textTertiary}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
           style={{
             fontSize: 15, color: colors.text, backgroundColor: colors.surface,
             borderRadius: radius.md, padding: spacing.lg,

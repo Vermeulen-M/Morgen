@@ -1,6 +1,6 @@
 import React, {useState, useEffect, useRef, useCallback} from 'react';
 import {
-  View, Text, StyleSheet, Animated, TouchableOpacity, StatusBar,
+  View, Text, StyleSheet, Animated, TouchableOpacity, StatusBar, Linking,
 } from 'react-native';
 import RNShake from 'react-native-shake';
 import {
@@ -433,6 +433,8 @@ const AlarmRingingScreen = ({navigation, route}) => {
     return () => pulse.stop();
   }, [pulseAnim]);
 
+  const hasMeetingLink = !!alarm.link && /^https:\/\//i.test(alarm.link);
+
   const handleChallengeComplete = async () => {
     stopAlarmSound();
     await updateStreak();
@@ -445,7 +447,8 @@ const AlarmRingingScreen = ({navigation, route}) => {
       syncGroupAlarms();
     }
     setSolved(true);
-    setTimeout(() => navigation.goBack(), 1800);
+    // Avec un lien de réunion, on reste sur l'écran pour laisser le choix.
+    if (!hasMeetingLink) setTimeout(() => navigation.goBack(), 1800);
   };
 
   const [h, m] = alarm.time.split(':');
@@ -470,6 +473,18 @@ const AlarmRingingScreen = ({navigation, route}) => {
         <Text style={{fontSize: 15, color: 'rgba(255,255,255,0.8)', marginTop: 12, textAlign: 'center'}}>
           Streak updated. Let's get this day!
         </Text>
+        {hasMeetingLink && (
+          <View style={{marginTop: 32, width: '100%', paddingHorizontal: 32}}>
+            <TouchableOpacity
+              onPress={() => { Linking.openURL(alarm.link); navigation.goBack(); }}
+              style={{backgroundColor: '#fff', borderRadius: 16, paddingVertical: 16, alignItems: 'center'}}>
+              <Text style={{fontSize: 16, fontWeight: '700', color: '#00A37A'}}>Join meeting</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={{marginTop: 14, alignItems: 'center', padding: 8}}>
+              <Text style={{fontSize: 14, color: 'rgba(255,255,255,0.85)'}}>Not now</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     );
   }

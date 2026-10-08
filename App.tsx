@@ -31,6 +31,7 @@ const App = () => {
               id: data.alarmId,
               groupAlarmId: data.groupAlarmId || null,
               groupName: data.groupName || null,
+              link: data.link || null,
               label: data.label || undefined,
               challenge: data.challenge || 'shake',
               shakeCount: parseInt(data.shakeCount || '20', 10),

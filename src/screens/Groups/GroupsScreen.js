@@ -1,12 +1,12 @@
 import React, {useCallback, useState} from 'react';
 import {
   View, Text, SafeAreaView, StyleSheet, TouchableOpacity,
-  FlatList, RefreshControl, Alert,
+  FlatList, RefreshControl, Alert, Image,
 } from 'react-native';
 import {useFocusEffect} from '@react-navigation/native';
 import {useTheme} from '../../theme';
 import {
-  listMyGroups, listMyPendingGroups, leaveGroup, syncGroupAlarms,
+  listMyGroups, listMyPendingGroups, leaveGroup, syncGroupAlarms, hasProfile,
 } from '../../services/GroupsService';
 
 const GroupCard = ({group, onPress, colors, spacing, radius}) => (
@@ -20,13 +20,18 @@ const GroupCard = ({group, onPress, colors, spacing, radius}) => (
       shadowColor: '#000', shadowOffset: {width: 0, height: 4},
       shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
     }}>
-    <View style={{
-      width: 48, height: 48, borderRadius: 14,
-      backgroundColor: colors.accent + '18',
-      alignItems: 'center', justifyContent: 'center', marginRight: 14,
-    }}>
-      <Text style={{fontSize: 22, color: colors.accent}}>⊙</Text>
-    </View>
+    {group.groups?.photo_url ? (
+      <Image source={{uri: group.groups.photo_url}}
+        style={{width: 48, height: 48, borderRadius: 14, marginRight: 14}} />
+    ) : (
+      <View style={{
+        width: 48, height: 48, borderRadius: 14,
+        backgroundColor: colors.accent + '18',
+        alignItems: 'center', justifyContent: 'center', marginRight: 14,
+      }}>
+        <Text style={{fontSize: 22, color: colors.accent}}>⊙</Text>
+      </View>
+    )}
     <View style={{flex: 1}}>
       <Text style={{fontSize: 16, fontWeight: '700', color: colors.text}}>
         {group.groups?.name}
@@ -43,20 +48,37 @@ const GroupsScreen = ({navigation}) => {
   const {colors, typography, spacing, radius} = useTheme();
   const [groups, setGroups] = useState([]);
   const [pending, setPending] = useState([]);
+  const [needsLogin, setNeedsLogin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
+      // Pas de profil sur cet appareil : rien à charger, l'état vide s'affiche.
+      if (!(await hasProfile())) {
+        setGroups([]);
+        setPending([]);
+        setNeedsLogin(false);
+        return;
+      }
       const [data, pendingData] = await Promise.all([
         listMyGroups(),
         listMyPendingGroups(),
       ]);
       setGroups(data || []);
       setPending(pendingData || []);
+      setNeedsLogin(false);
       syncGroupAlarms(); // une approbation récente apporte de nouvelles alarmes
     } catch (e) {
-      console.error('List groups error:', e);
+      if (String(e?.message || '').includes('Session expirée')) {
+        // Profil local mais plus de session : on propose de se reconnecter
+        // au lieu d'afficher une erreur.
+        setNeedsLogin(true);
+        setGroups([]);
+        setPending([]);
+      } else {
+        console.error('List groups error:', e);
+      }
     } finally {
       setLoading(false);
     }
@@ -92,6 +114,7 @@ const GroupsScreen = ({navigation}) => {
     navigation.navigate('GroupDetail', {
       groupId: group.groups.id,
       groupName: group.groups.name,
+      photoUrl: group.groups.photo_url,
     });
   }, [navigation]);
 
@@ -122,6 +145,29 @@ const GroupsScreen = ({navigation}) => {
           <Text style={{color: colors.accent, fontWeight: '700', fontSize: 14}}>Join with code</Text>
         </TouchableOpacity>
       </View>
+
+      {needsLogin && (
+        <View style={{
+          marginHorizontal: spacing.xl, marginBottom: spacing.lg,
+          backgroundColor: colors.surface, borderRadius: radius.lg,
+          padding: spacing.lg, borderWidth: 1, borderColor: colors.accent,
+        }}>
+          <Text style={{fontSize: 15, fontWeight: '700', color: colors.text}}>
+            You're signed out
+          </Text>
+          <Text style={{fontSize: 13, color: colors.textSecondary, marginTop: 4, lineHeight: 18}}>
+            Log in again to see your groups and get their alarms.
+          </Text>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Login', {onDone: () => load()})}
+            style={{
+              backgroundColor: colors.accent, borderRadius: radius.md,
+              paddingVertical: 12, alignItems: 'center', marginTop: spacing.md,
+            }}>
+            <Text style={{color: '#fff', fontWeight: '700', fontSize: 14}}>Log in</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <FlatList
         data={groups}

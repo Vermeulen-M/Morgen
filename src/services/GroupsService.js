@@ -318,11 +318,33 @@ export const createGroup = async ({name}) => {
   return group;
 };
 
+export const uploadGroupPhoto = async (groupId, base64) => {
+  if (!base64) throw new Error('The selected photo is empty — pick another one.');
+  await ensureSupabaseSession();
+  const path = `groups/${groupId}/avatar.jpg`;
+  const {error} = await supabase.storage
+    .from('avatars')
+    .upload(path, base64ToBytes(base64), {contentType: 'image/jpeg', upsert: true});
+  if (error) throw new Error(error.message || 'Upload failed.');
+  const {data} = supabase.storage.from('avatars').getPublicUrl(path);
+  const url = data?.publicUrl ? `${data.publicUrl}?v=${Date.now()}` : null;
+  const {error: updError} = await supabase
+    .from('groups').update({photo_url: url}).eq('id', groupId);
+  if (updError) throw updError;
+  return url;
+};
+
+export const getGroupPhoto = async groupId => {
+  const {data} = await supabase
+    .from('groups').select('photo_url').eq('id', groupId).maybeSingle();
+  return data?.photo_url || null;
+};
+
 export const listMyGroups = async () => {
   const userId = await getSupabaseUserId();
   const {data, error} = await supabase
     .from('group_members')
-    .select('role, status, groups(id, name, created_by)')
+    .select('role, status, groups(id, name, created_by, photo_url)')
     .eq('profile_id', userId)
     .eq('status', 'approved');
   if (error) throw error;
@@ -334,7 +356,7 @@ export const listMyPendingGroups = async () => {
   const userId = await getSupabaseUserId();
   const {data, error} = await supabase
     .from('group_members')
-    .select('role, status, groups(id, name, created_by)')
+    .select('role, status, groups(id, name, created_by, photo_url)')
     .eq('profile_id', userId)
     .eq('status', 'pending');
   if (error) throw error;
@@ -427,7 +449,7 @@ export const promoteToAdmin = async (groupId, profileId) => {
 // --- Alarmes de groupe (défi optionnel, 2 modes de fuseau horaire) --------
 
 export const createGroupAlarm = async (groupId, {
-  time, days, challenge = null, timezoneMode = 'local', timezone = null, date = null, note = '',
+  time, days, challenge = null, timezoneMode = 'local', timezone = null, date = null, note = '', link = null,
 }) => {
   const userId = await getSupabaseUserId();
   const {data, error} = await supabase
@@ -441,6 +463,7 @@ export const createGroupAlarm = async (groupId, {
       date, // 'YYYY-MM-DD' pour une alarme unique, null = récurrente
       timezone, // fuseau IANA de l'admin (utile pour 'same_instant')
       note,
+      link, // lien de réunion https:// optionnel
       created_by: userId,
     })
     .select()
@@ -527,7 +550,7 @@ export const syncGroupAlarms = async () => {
     for (const {alarm, groupName} of all) {
       const sig = JSON.stringify([
         alarm.time, alarm.days, alarm.date, alarm.timezone_mode, alarm.timezone,
-        alarm.challenge, alarm.note, groupName, deviceZone, cap,
+        alarm.challenge, alarm.note, alarm.link, groupName, deviceZone, cap,
       ]);
       const prev = stored[alarm.id];
       const fresh = prev && prev.sig === sig && prev.until - now > prev.span / 2;
